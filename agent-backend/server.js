@@ -305,6 +305,37 @@ app.post("/play", (req, res) => {
   res.json({ ok: true, message: `Agent started (${workflowType})` });
 });
 
+app.get("/logs", (req, res) => {
+  const logsDir = path.join(__dirname, "logs");
+  if (!fs.existsSync(logsDir)) return res.json({ runs: [] });
+
+  const runs = fs.readdirSync(logsDir)
+    .filter((name) => fs.statSync(path.join(logsDir, name)).isDirectory())
+    .sort()
+    .reverse()
+    .map((runId) => {
+      const runFile = path.join(logsDir, runId, "run.json");
+      if (!fs.existsSync(runFile)) return { runId, status: "incomplete" };
+      const run = readJson(runFile, {});
+      return {
+        runId,
+        startedAt: run.startedAt,
+        completedAt: run.completedAt,
+        workflow: run.workflow?.name,
+        turns: run.turns?.length || 0,
+        summary: run.summary?.slice(0, 120),
+      };
+    });
+
+  res.json({ runs });
+});
+
+app.get("/logs/:runId", (req, res) => {
+  const runFile = path.join(__dirname, "logs", req.params.runId, "run.json");
+  if (!fs.existsSync(runFile)) return res.status(404).json({ error: "Run not found" });
+  res.json(readJson(runFile, {}));
+});
+
 app.get("/debug-events", (req, res) => {
   const events = readJson(EVENTS_FILE, []);
   const screenshots = readJson(SCREENSHOTS_FILE, []);

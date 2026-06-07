@@ -1,6 +1,8 @@
 import json
 import os
 import time
+import base64
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -12,18 +14,77 @@ from google.genai import types
 load_dotenv()
 
 WORKFLOW_FILE = Path(__file__).parent / "workflow.json"
+LOGS_DIR = Path(__file__).parent / "logs"
 SCREEN_WIDTH = 1440
 SCREEN_HEIGHT = 900
 MAX_TURNS = 30
 MODEL = "gemini-2.5-computer-use-preview-10-2025"
 
 
+# ─── Logging ──────────────────────────────────────────────────────────────────
+
+class RunLogger:
+    def __init__(self, workflow: dict):
+        self.run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+        self.run_dir = LOGS_DIR / self.run_id
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+
+        self.log = {
+            "runId": self.run_id,
+            "startedAt": datetime.now().isoformat(),
+            "workflow": {
+                "name": workflow.get("workflowName"),
+                "type": workflow.get("workflowType"),
+                "learnedBy": workflow.get("learnedBy"),
+                "originUrl": workflow.get("originUrl"),
+                "destinationUrl": workflow.get("destinationUrl"),
+            },
+            "turns": [],
+            "completedAt": None,
+            "summary": None,
+        }
+        print(f"  📁 Log: logs/{self.run_id}/")
+
+    def save_screenshot(self, screenshot_bytes: bytes, turn: int) -> str:
+        filename = f"turn-{turn:03d}.png"
+        (self.run_dir / filename).write_bytes(screenshot_bytes)
+        return filename
+
+    def add_turn(self, turn: int, active_url: str, reasoning: str,
+                 actions: list, screenshot_bytes: bytes, url_after: str):
+        screenshot_file = self.save_screenshot(screenshot_bytes, turn)
+        entry = {
+            "turn": turn,
+            "timestamp": datetime.now().isoformat(),
+            "activeUrl": active_url,
+            "geminireasoning": reasoning,
+            "actions": actions,
+            "screenshotFile": screenshot_file,
+            "urlAfter": url_after,
+        }
+        self.log["turns"].append(entry)
+        self._flush()
+
+    def finish(self, summary: str):
+        self.log["completedAt"] = datetime.now().isoformat()
+        self.log["summary"] = summary
+        self._flush()
+        print(f"\n  📋 Full log saved: logs/{self.run_id}/run.json")
+        print(f"  🖼️  Screenshots: logs/{self.run_id}/turn-*.png")
+
+    def _flush(self):
+        (self.run_dir / "run.json").write_text(
+            json.dumps(self.log, indent=2, ensure_ascii=False)
+        )
+
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
 def denorm(coord, size):
     return int(coord / 1000 * size)
 
 
 def same_host(url_a, url_b):
-    """Check if two URLs share the same hostname."""
     try:
         return urlparse(url_a).netloc == urlparse(url_b).netloc
     except Exception:
@@ -31,22 +92,17 @@ def same_host(url_a, url_b):
 
 
 def find_tab_for_url(url, tabs):
-    """Return the tab whose base URL matches the given URL, or None."""
     for tab_url, page in tabs.items():
         if same_host(url, tab_url):
             return page
     return None
 
 
+# ─── Action executor ──────────────────────────────────────────────────────────
+
 def execute_action(fname, args, state):
-    """
-    Execute a Computer Use action.
-    state = {"active": page, "tabs": {url: page, ...}}
-    May switch state["active"] when navigate targets another open tab.
-    """
     page = state["active"]
-    label = f"{fname}({dict(args)})"
-    print(f"  → {label}")
+    print(f"  → {fname}({dict(args)})")
 
     try:
         if fname == "open_web_browser":
@@ -54,7 +110,6 @@ def execute_action(fname, args, state):
 
         elif fname == "navigate":
             target_url = args["url"]
-            # Check if this URL belongs to an already-open tab
             other_tab = find_tab_for_url(target_url, state["tabs"])
             if other_tab and other_tab is not page:
                 print(f"    ↪ switching tab to {target_url}")
@@ -70,8 +125,7 @@ def execute_action(fname, args, state):
             page.mouse.move(denorm(args["x"], SCREEN_WIDTH), denorm(args["y"], SCREEN_HEIGHT))
 
         elif fname == "type_text_at":
-            x = denorm(args["x"], SCREEN_WIDTH)
-            y = denorm(args["y"], SCREEN_HEIGHT)
+            x, y = denorm(args["x"], SCREEN_WIDTH), denorm(args["y"], SCREEN_HEIGHT)
             page.mouse.click(x, y)
             if args.get("clear_before_typing", True):
                 page.keyboard.press("Meta+A")
@@ -88,8 +142,7 @@ def execute_action(fname, args, state):
             page.keyboard.press("PageDown" if direction == "down" else "PageUp")
 
         elif fname == "scroll_at":
-            x = denorm(args["x"], SCREEN_WIDTH)
-            y = denorm(args["y"], SCREEN_HEIGHT)
+            x, y = denorm(args["x"], SCREEN_WIDTH), denorm(args["y"], SCREEN_HEIGHT)
             magnitude = args.get("magnitude", 300)
             direction = args.get("direction", "down")
             page.mouse.wheel(x, y, delta_x=0, delta_y=magnitude if direction == "down" else -magnitude)
@@ -119,7 +172,7 @@ def execute_action(fname, args, state):
     except Exception as e:
         print(f"    ✗ Error: {e}")
 
-    time.sleep(0.4)
+    time.sleep(0.2)   # reduced from 0.4
 
 
 def capture_state(state):
@@ -128,9 +181,11 @@ def capture_state(state):
         page.wait_for_load_state("domcontentloaded", timeout=8000)
     except Exception:
         pass
-    time.sleep(0.8)
+    time.sleep(0.4)   # reduced from 0.8
     return page.screenshot(type="png"), page.url
 
+
+# ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     workflow = json.loads(WORKFLOW_FILE.read_text())
@@ -143,33 +198,29 @@ def main():
         print("ERROR: workflow.json has no taskDescription. Run Stop + Learn first.")
         return
 
+    logger = RunLogger(workflow)
+
     print(f"\n{'='*60}")
-    print(f"Workflow: {workflow.get('workflowName', 'unknown')}")
-    print(f"Learned by: {workflow.get('learnedBy', '?')}")
-    print(f"Task: {task_description[:120]}...")
+    print(f"Workflow : {workflow.get('workflowName', 'unknown')}")
+    print(f"Learned  : {workflow.get('learnedBy', '?')}")
+    print(f"Task     : {task_description[:120]}...")
     print(f"{'='*60}\n")
 
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-
     config = types.GenerateContentConfig(
-        tools=[
-            types.Tool(
-                computer_use=types.ComputerUse(
-                    environment=types.Environment.ENVIRONMENT_BROWSER
-                )
-            )
-        ],
+        tools=[types.Tool(computer_use=types.ComputerUse(
+            environment=types.Environment.ENVIRONMENT_BROWSER
+        ))],
     )
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=False, slow_mo=250)
+        browser = pw.chromium.launch(headless=False, slow_mo=100)   # reduced from 250
         context = browser.new_context(
             viewport={"width": SCREEN_WIDTH, "height": SCREEN_HEIGHT}
         )
 
-        # --- Open tabs ---
+        # ── Open tabs ──────────────────────────────────────────────
         tabs = {}
-
         if origin_url:
             print(f"Opening tab 1 (origin): {origin_url}")
             p1 = context.new_page()
@@ -186,14 +237,13 @@ def main():
             print("ERROR: no URLs in workflow.json")
             return
 
-        # Start on first tab (origin, or destination if no origin)
         first_page = tabs.get(origin_url) or list(tabs.values())[0]
         first_page.bring_to_front()
-        time.sleep(1.5)
+        time.sleep(1)
 
         state = {"active": first_page, "tabs": tabs}
 
-        # --- Build prompt ---
+        # ── Build prompt ────────────────────────────────────────────
         arco_email = os.environ.get("ARCO_EMAIL", "")
         arco_password = os.environ.get("ARCO_PASSWORD", "")
         creds_hint = ""
@@ -209,12 +259,12 @@ def main():
 You have {len(tabs)} browser tab(s) open:
 {tabs_description}
 
-To switch between tabs, use the 'navigate' action with the target URL — the agent will bring the correct tab to the front automatically.
+To switch between tabs, use the 'navigate' action with the target URL — the correct tab will come to front automatically.
 
 Field mapping reference (from recorded example): {field_mappings}
 
 --- MANDATORY DEDUPLICATION PROTOCOL ---
-You MUST follow these steps in order. Do not skip any step.
+Follow these steps in order. Do not skip any step.
 
 STEP 1 — Scan existing destination records:
   Navigate to the destination tab ({destination_url}).
@@ -228,14 +278,14 @@ STEP 2 — Scan origin records:
 STEP 3 — Calculate what is missing:
   Compare both lists.
   Only records that exist in the ORIGIN but NOT in the DESTINATION need to be transferred.
-  If all records already exist in the destination, output a summary and stop — do not re-add anything.
+  If all records already exist, output a summary and stop — do not re-add anything.
 
 STEP 4 — Transfer only the missing records:
   For each missing record (and only those), fill the destination form and submit.
   After each submission, verify the new record appears in the destination list before continuing.
 
 STEP 5 — Final validation:
-  After all transfers, go back to the destination and confirm every record from the origin now exists there.
+  Go back to the destination and confirm every origin record now exists there.
   Report: how many already existed, how many were added, and list their IDs.
 ---"""
 
@@ -251,9 +301,12 @@ STEP 5 — Final validation:
             )
         ]
 
-        # --- Agent loop ---
-        for turn in range(MAX_TURNS):
-            print(f"\n--- Turn {turn + 1}/{MAX_TURNS} | active tab: {state['active'].url} ---")
+        # ── Agent loop ──────────────────────────────────────────────
+        final_summary = "Agent stopped without summary."
+
+        for turn_num in range(1, MAX_TURNS + 1):
+            active_url_before = state["active"].url
+            print(f"\n--- Turn {turn_num}/{MAX_TURNS} | {active_url_before} ---")
 
             response = client.models.generate_content(
                 model=MODEL,
@@ -264,10 +317,15 @@ STEP 5 — Final validation:
             candidate = response.candidates[0]
             contents.append(candidate.content)
 
+            # Collect reasoning text
+            reasoning_parts = []
             for part in candidate.content.parts:
                 if hasattr(part, "text") and part.text:
+                    reasoning_parts.append(part.text)
                     print(f"  Gemini: {part.text[:200]}")
+            reasoning = " ".join(reasoning_parts)
 
+            # Collect function calls
             function_calls = [
                 p.function_call
                 for p in candidate.content.parts
@@ -275,23 +333,46 @@ STEP 5 — Final validation:
             ]
 
             if not function_calls:
-                print("\n✓ Agent finished — no more actions.")
+                final_summary = reasoning or "No further actions."
+                print("\n✓ Agent finished.")
+                # Log final state
+                final_screenshot, final_url = capture_state(state)
+                logger.add_turn(
+                    turn=turn_num,
+                    active_url=active_url_before,
+                    reasoning=reasoning,
+                    actions=[],
+                    screenshot_bytes=final_screenshot,
+                    url_after=final_url,
+                )
                 break
 
-            executed = []
+            # Execute actions and log them
+            executed_actions = []
             for fc in function_calls:
+                action_entry = {"name": fc.name, "args": dict(fc.args)}
                 execute_action(fc.name, dict(fc.args), state)
-                executed.append(fc.name)
+                executed_actions.append(action_entry)
 
             new_screenshot, new_url = capture_state(state)
-            print(f"  Current URL: {new_url}")
+            print(f"  URL after: {new_url}")
 
+            logger.add_turn(
+                turn=turn_num,
+                active_url=active_url_before,
+                reasoning=reasoning,
+                actions=executed_actions,
+                screenshot_bytes=new_screenshot,
+                url_after=new_url,
+            )
+
+            # Build function responses
             response_parts = []
-            for name in executed:
+            for fc in function_calls:
                 response_parts.append(
                     types.Part(
                         function_response=types.FunctionResponse(
-                            name=name,
+                            name=fc.name,
                             response={"url": new_url},
                         )
                     )
@@ -299,12 +380,11 @@ STEP 5 — Final validation:
             response_parts.append(
                 types.Part.from_bytes(data=new_screenshot, mime_type="image/png")
             )
-
             contents.append(types.Content(role="user", parts=response_parts))
 
-        print("\nAgent execution complete. Browser will stay open — close it manually when done.")
+        logger.finish(final_summary)
+        print("\nAgent execution complete. Close the browser when done.")
 
-        # Keep the process alive until the user closes the browser window
         try:
             first_page.wait_for_event("close", timeout=0)
         except Exception:
