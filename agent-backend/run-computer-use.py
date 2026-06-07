@@ -17,7 +17,7 @@ WORKFLOW_FILE = Path(__file__).parent / "workflow.json"
 LOGS_DIR = Path(__file__).parent / "logs"
 SCREEN_WIDTH = 1440
 SCREEN_HEIGHT = 900
-MAX_TURNS = 30
+MAX_TURNS = 50
 MODEL = "gemini-2.5-computer-use-preview-10-2025"
 
 
@@ -263,13 +263,19 @@ To switch between tabs, use the 'navigate' action with the target URL — the co
 
 Field mapping reference (from recorded example): {field_mappings}
 
+--- CRITICAL RULES (read before doing anything) ---
+1. NEVER stop in the middle of filling a form. If you started filling fields, you MUST click the save/submit/guardar button before stopping or switching tabs.
+2. NEVER consider a record "transferred" until you have clicked the submit button AND confirmed the record appears in the destination list.
+3. If you cannot find the submit button, scroll down — it may be below the visible area.
+4. Only stop and report when ALL records have been fully processed and verified.
+
 --- MANDATORY DEDUPLICATION PROTOCOL ---
 Follow these steps in order. Do not skip any step.
 
 STEP 1 — Scan existing destination records:
   Navigate to the destination tab ({destination_url}).
-  Scroll through ALL registered/existing records and read every ID (order number, PO, or equivalent).
-  Mentally note the full list of IDs already present.
+  Scroll through ALL registered/existing records and note every ID visible.
+  If there are no records yet, note that the destination is empty.
 
 STEP 2 — Scan origin records:
   Navigate to the origin tab ({origin_url}).
@@ -280,13 +286,19 @@ STEP 3 — Calculate what is missing:
   Only records that exist in the ORIGIN but NOT in the DESTINATION need to be transferred.
   If all records already exist, output a summary and stop — do not re-add anything.
 
-STEP 4 — Transfer only the missing records:
-  For each missing record (and only those), fill the destination form and submit.
-  After each submission, verify the new record appears in the destination list before continuing.
+STEP 4 — Transfer only the missing records (one by one):
+  For each missing record:
+    a. Read ALL the fields for that record from the origin.
+    b. Switch to the destination tab.
+    c. Fill EVERY required field in the form — do not leave any field empty.
+    d. Scroll down if needed to find remaining fields or the submit button.
+    e. Click the save/submit/guardar button to save the record.
+    f. Wait and confirm the new record now appears in the destination list.
+    g. Only then move on to the next record.
 
 STEP 5 — Final validation:
-  Go back to the destination and confirm every origin record now exists there.
-  Report: how many already existed, how many were added, and list their IDs.
+  After all transfers, go to the destination and verify every origin record is now present.
+  Report: how many already existed, how many were added, list their IDs.
 ---"""
 
         initial_screenshot, current_url = capture_state(state)
