@@ -293,7 +293,7 @@ app.post("/play", (req, res) => {
   let child;
 
   if (workflowType === "computer_use") {
-    child = spawn("python3", ["run-computer-use.py"], { cwd: __dirname, shell: true });
+    child = spawn("/usr/bin/python3", ["run-computer-use.py"], { cwd: __dirname, shell: false });
   } else {
     child = spawn("node", ["run-playwright.js"], { cwd: __dirname, shell: true });
   }
