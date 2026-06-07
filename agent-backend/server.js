@@ -1,14 +1,19 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
 const PORT = 4000;
 
 const EVENTS_FILE = path.join(__dirname, "events.json");
 const WORKFLOW_FILE = path.join(__dirname, "workflow.json");
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
@@ -31,207 +36,337 @@ function log(message) {
   console.log(`[Agent Backend] ${message}`);
 }
 
-app.get("/", (req, res) => {
-  res.json({
-    ok: true,
-    message: "Agent backend is running"
+// --- Gemini learner ---
+
+async function learnWithGemini(events) {
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+  const compactEvents = events.map((e) => {
+    const item = {
+      type: e.eventType,
+      system: e.system,
+      url: e.url,
+    };
+    if (e.selectedText) item.copiedText = e.selectedText;
+    if (e.pastedText) item.pastedText = e.pastedText;
+    if (e.inputValue) item.inputValue = e.inputValue;
+    if (e.element) {
+      item.element = {
+        selector: e.element.selector,
+        label:
+          e.element.inputLabel ||
+          e.element.tableHeader ||
+          e.element.detailLabel ||
+          null,
+        placeholder: e.element.placeholder || null,
+        dataField:
+          e.element.dataField ||
+          e.element.dataOriginField ||
+          e.element.dataDestinationField ||
+          null,
+        text: e.element.text?.slice(0, 150) || null,
+      };
+    }
+    return item;
   });
-});
 
-app.post("/events", (req, res) => {
-  const event = req.body;
-  const events = readJson(EVENTS_FILE, []);
+  const originUrl =
+    events.find((e) => e.system === "origin")?.url ||
+    "https://valmart-ecru.vercel.app/";
+  const destinationUrl =
+    events.find((e) => e.system === "destination")?.url ||
+    "https://arco-nine.vercel.app/";
 
-  events.push(event);
-  writeJson(EVENTS_FILE, events);
+  const prompt = `You are an AI browser workflow learner.
 
-  log(`Event received: ${event.eventType} | ${event.system} | ${event.url}`);
+A user performed actions in a browser. Analyze the recorded events and produce a reusable workflow JSON.
 
-  res.json({
-    ok: true,
-    totalEvents: events.length
-  });
-});
+WORKFLOW TYPES:
+1. "data_transfer" - User copied values from an "origin" system and pasted them into a "destination" system's form. Learn the field mappings so they can be automated for future rows.
+2. "action_sequence" - User performed a sequence of actions on one or more pages (e.g. login, form fill, button clicks). Learn the step-by-step actions to replay.
 
-app.get("/events", (req, res) => {
-  const events = readJson(EVENTS_FILE, []);
-  res.json(events);
-});
+Choose the type that best fits the events.
 
-app.post("/reset", (req, res) => {
-  writeJson(EVENTS_FILE, []);
-  res.json({
-    ok: true,
-    message: "Events reset"
-  });
-});
+RECORDED EVENTS:
+${JSON.stringify(compactEvents, null, 2)}
 
-app.post("/learn", (req, res) => {
-  const events = readJson(EVENTS_FILE, []);
+For "data_transfer", return exactly this JSON shape (fill in real values from events):
+{
+  "workflowType": "data_transfer",
+  "workflowName": "database_row_transfer",
+  "origin": {
+    "url": "${originUrl}",
+    "rowSelector": "#orders-body tr",
+    "cellSelector": "td",
+    "tableHeadersSelector": "#origin-orders-table thead th"
+  },
+  "destination": {
+    "url": "${destinationUrl}",
+    "formSelector": "#destination-form",
+    "submitSelector": "#save-order",
+    "resultRowsSelector": "#registered-body tr"
+  },
+  "mappings": [
+    {
+      "originLabel": "PO Number",
+      "originField": "poNumber",
+      "originSelector": "[data-field=\\"poNumber\\"]",
+      "destinationLabel": "Internal Order ID",
+      "destinationSelector": "#internal-order-id",
+      "destinationField": "internalOrderId",
+      "observedValue": "PO-1001",
+      "reason": "Value PO-1001 was copied from PO Number and pasted into Internal Order ID",
+      "confidence": 0.98
+    }
+  ]
+}
 
-  const originEvents = events.filter((event) => event.system === "origin");
-  const destinationEvents = events.filter((event) => event.system === "destination");
+For "action_sequence", return exactly this JSON shape (fill in real values from events):
+{
+  "workflowType": "action_sequence",
+  "workflowName": "recorded_flow",
+  "targetUrl": "https://example.com",
+  "steps": [
+    { "action": "navigate", "url": "https://example.com/login", "label": "Go to login" },
+    { "action": "fill", "selector": "#email", "value": "user@example.com", "label": "Enter email" },
+    { "action": "fill", "selector": "#password", "value": "secret", "label": "Enter password" },
+    { "action": "click", "selector": "button[type=submit]", "label": "Submit" },
+    { "action": "waitFor", "selector": ".dashboard", "label": "Wait for dashboard" }
+  ],
+  "variables": []
+}
 
-  const originUrl = originEvents[0]?.url || "http://localhost:3000";
-  const destinationUrl = destinationEvents[0]?.url || "http://localhost:3001";
+Rules:
+- Return ONLY valid JSON. No explanation. No markdown code fences.
+- For data_transfer: use semantic field matching, not just exact value matches. Infer originField from camelCase of the originLabel.
+- For action_sequence: include all meaningful user interactions in order. Use the most stable selector available (id > data attribute > class).
+- Set confidence to 0.9+ when you are certain, lower when guessing.`;
 
-  const originCopies = originEvents
-    .filter((event) => event.eventType === "copy" && event.selectedText)
-    .map((event) => ({
-        value: event.selectedText.trim(),
-        selector: event.element?.selector || null,
+  const result = await model.generateContent(prompt);
+  const text = result.response.text().trim();
+
+  const cleaned = text
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
+
+  return JSON.parse(cleaned);
+}
+
+// --- Heuristic learner (fallback) ---
+
+function learnWithHeuristic(events) {
+  const originEvents = events.filter((e) => e.system === "origin");
+  const destinationEvents = events.filter((e) => e.system === "destination");
+
+  const originUrl =
+    originEvents[0]?.url || "https://valmart-ecru.vercel.app/";
+  const destinationUrl =
+    destinationEvents[0]?.url || "https://arco-nine.vercel.app/";
+
+  const originObservations = [
+    ...originEvents
+      .filter((e) => e.eventType === "copy" && e.selectedText)
+      .map((e) => ({
+        value: e.selectedText.trim(),
+        selector: e.element?.selector || null,
         originField:
-        event.element?.dataField ||
-        event.element?.dataOriginField ||
-        null,
+          e.element?.dataField || e.element?.dataOriginField || null,
         originLabel:
-        event.element?.detailLabel ||
-        event.element?.tableHeader ||
-        event.element?.dataField ||
-        event.element?.dataOriginField ||
-        null
-    }))
-    .filter((item) => item.value);
-
-  const originClicks = originEvents
-    .filter((event) => event.eventType === "click" && event.element?.text)
-    .map((event) => ({
-        value: event.element.text.trim(),
-        selector: event.element.selector,
+          e.element?.detailLabel ||
+          e.element?.tableHeader ||
+          e.element?.dataField ||
+          null,
+      })),
+    ...originEvents
+      .filter((e) => e.eventType === "click" && e.element?.text)
+      .map((e) => ({
+        value: e.element.text.trim(),
+        selector: e.element.selector,
         originField:
-        event.element?.dataField ||
-        event.element?.dataOriginField ||
-        null,
+          e.element?.dataField || e.element?.dataOriginField || null,
         originLabel:
-        event.element.detailLabel ||
-        event.element.tableHeader ||
-        event.element.dataField ||
-        event.element.dataOriginField ||
-        null
-    }))
-    .filter((item) => item.value);
-
-  const originObservations = [...originCopies, ...originClicks];
+          e.element?.detailLabel ||
+          e.element?.tableHeader ||
+          e.element?.dataField ||
+          null,
+      })),
+  ].filter((item) => item.value);
 
   const destinationWrites = destinationEvents
     .filter(
-      (event) =>
-        (event.eventType === "input" ||
-          event.eventType === "change" ||
-          event.eventType === "paste") &&
-        (event.inputValue || event.pastedText)
+      (e) =>
+        (e.eventType === "input" ||
+          e.eventType === "change" ||
+          e.eventType === "paste") &&
+        (e.inputValue || e.pastedText)
     )
-    .map((event) => ({
-      value: (event.inputValue || event.pastedText || "").trim(),
-      selector: event.element?.selector,
+    .map((e) => ({
+      value: (e.inputValue || e.pastedText || "").trim(),
+      selector: e.element?.selector,
       label:
-        event.element?.inputLabel ||
-        event.element?.dataDestinationField ||
-        event.element?.placeholder ||
+        e.element?.inputLabel ||
+        e.element?.dataDestinationField ||
+        e.element?.placeholder ||
         null,
-      destinationField: event.element?.dataDestinationField || null
+      destinationField: e.element?.dataDestinationField || null,
     }))
     .filter((item) => item.value);
 
-  const finalDestinationWritesByValue = new Map();
-
+  const destByValue = new Map();
   for (const write of destinationWrites) {
-    finalDestinationWritesByValue.set(write.value, write);
+    destByValue.set(write.value, write);
   }
 
+  const seen = new Set();
   const mappings = [];
 
-    for (const origin of originObservations) {
-    const destination = finalDestinationWritesByValue.get(origin.value);
+  for (const origin of originObservations) {
+    const destination = destByValue.get(origin.value);
+    if (!destination) continue;
 
-    if (destination) {
-        mappings.push({
-        originLabel: origin.originLabel,
-        originField: origin.originField,
-        originSelector: origin.selector,
-        destinationLabel: destination.label,
-        destinationSelector: destination.selector,
-        destinationField: destination.destinationField,
-        observedValue: origin.value,
-        confidence: 0.95
-        });
-    }
-    }
+    const key = `${origin.originField || origin.originLabel}->${destination.selector}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
 
-  const uniqueMappings = [];
-  const seen = new Set();
-
-  for (const mapping of mappings) {
-    const key = `${mapping.originField || mapping.originLabel}->${mapping.destinationSelector}`;
-
-    if (!seen.has(key)) {
-        seen.add(key);
-        uniqueMappings.push(mapping);
-    }
-    }
-
-  const copiedValues = originEvents
-    .filter((event) => event.eventType === "copy" && event.selectedText)
-    .map((event) => event.selectedText.trim())
-    .filter(Boolean);
-
-  if (uniqueMappings.length === 0) {
-    return res.status(400).json({
-        ok: false,
-        error: "No mappings learned. The recorder did not capture matching origin and destination values.",
-        debug: {
-        totalEvents: events.length,
-        originEvents: originEvents.length,
-        destinationEvents: destinationEvents.length,
-        copiedValues,
-        destinationWrites,
-        originObservations
-        }
+    mappings.push({
+      originLabel: origin.originLabel,
+      originField: origin.originField,
+      originSelector: origin.selector,
+      destinationLabel: destination.label,
+      destinationSelector: destination.selector,
+      destinationField: destination.destinationField,
+      observedValue: origin.value,
+      confidence: 0.95,
     });
-    }
+  }
 
-  const workflow = {
+  return {
+    workflowType: "data_transfer",
     workflowName: "database_row_transfer",
     origin: {
       url: originUrl,
       rowSelector: "#orders-body tr",
       cellSelector: "td",
-      tableHeadersSelector: "#origin-orders-table thead th"
+      tableHeadersSelector: "#origin-orders-table thead th",
     },
     destination: {
       url: destinationUrl,
       formSelector: "#destination-form",
       submitSelector: "#save-order",
-      resultRowsSelector: "#registered-body tr"
+      resultRowsSelector: "#registered-body tr",
     },
-    mappings: uniqueMappings,
-    learnedFromObservation: true,
-    observedCopiedValues: copiedValues,
-    explanation:
-      "The recorder observed which origin cell values were copied or clicked and which destination form inputs received the same values. It inferred column-to-field mappings from matching values, labels, and selectors.",
-    confidence: uniqueMappings.length > 0 ? 0.95 : 0.45,
-    createdAt: new Date().toISOString()
+    mappings,
   };
+}
 
-  writeJson(WORKFLOW_FILE, workflow);
+// --- Routes ---
 
-  log("Database-style workflow learned and saved.");
-
-  res.json({
-    ok: true,
-    workflow
-  });
+app.get("/", (req, res) => {
+  res.json({ ok: true, message: "Agent backend is running" });
 });
 
-function generalizeDestinationListSelector(inputSelector) {
-    // For this TodoMVC prototype, destination list is near the input.
-    // Later, this should also be learned from DOM context or LLM.
-    return "#destination-list li label";
+app.post("/events", (req, res) => {
+  const event = req.body;
+  const events = readJson(EVENTS_FILE, []);
+  events.push(event);
+  writeJson(EVENTS_FILE, events);
+  log(`Event: ${event.eventType} | ${event.system} | ${event.url}`);
+  res.json({ ok: true, totalEvents: events.length });
+});
+
+app.get("/events", (req, res) => {
+  res.json(readJson(EVENTS_FILE, []));
+});
+
+app.post("/reset", (req, res) => {
+  writeJson(EVENTS_FILE, []);
+  res.json({ ok: true, message: "Events reset" });
+});
+
+app.post("/learn", async (req, res) => {
+  const events = readJson(EVENTS_FILE, []);
+
+  if (events.length === 0) {
+    return res.status(400).json({
+      ok: false,
+      error: "No events recorded. Start recording first.",
+    });
+  }
+
+  let workflow = null;
+  let learner = "gemini";
+
+  // Try Gemini first
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      log("Calling Gemini to learn workflow...");
+      workflow = await learnWithGemini(events);
+
+      if (!workflow || !workflow.workflowType) {
+        throw new Error("Gemini returned invalid workflow");
+      }
+
+      // For data_transfer: require at least one mapping
+      if (
+        workflow.workflowType === "data_transfer" &&
+        (!workflow.mappings || workflow.mappings.length === 0)
+      ) {
+        throw new Error("Gemini returned no mappings");
+      }
+
+      // For action_sequence: require at least one step
+      if (
+        workflow.workflowType === "action_sequence" &&
+        (!workflow.steps || workflow.steps.length === 0)
+      ) {
+        throw new Error("Gemini returned no steps");
+      }
+
+      log(`Gemini learned workflow: ${workflow.workflowType} (${workflow.workflowName})`);
+    } catch (err) {
+      log(`Gemini failed: ${err.message} — falling back to heuristic`);
+      workflow = null;
+      learner = "heuristic";
     }
+  }
+
+  // Fall back to heuristic
+  if (!workflow) {
+    learner = "heuristic";
+    workflow = learnWithHeuristic(events);
+
+    if (
+      workflow.workflowType === "data_transfer" &&
+      workflow.mappings.length === 0
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          "No mappings learned. The recorder did not capture matching origin and destination values.",
+        debug: {
+          totalEvents: events.length,
+          originEvents: events.filter((e) => e.system === "origin").length,
+          destinationEvents: events.filter((e) => e.system === "destination")
+            .length,
+        },
+      });
+    }
+  }
+
+  workflow.learnedBy = learner;
+  workflow.learnedFromObservation = true;
+  workflow.createdAt = new Date().toISOString();
+
+  writeJson(WORKFLOW_FILE, workflow);
+  log(`Workflow saved (learner: ${learner}).`);
+
+  res.json({ ok: true, learner, workflow });
+});
 
 app.get("/workflow", (req, res) => {
-  const workflow = readJson(WORKFLOW_FILE, {});
-  res.json(workflow);
+  res.json(readJson(WORKFLOW_FILE, {}));
 });
 
 app.post("/play", (req, res) => {
@@ -239,7 +374,7 @@ app.post("/play", (req, res) => {
 
   const child = spawn("node", ["run-playwright.js"], {
     cwd: __dirname,
-    shell: true
+    shell: true,
   });
 
   child.stdout.on("data", (data) => {
@@ -251,30 +386,27 @@ app.post("/play", (req, res) => {
   });
 
   child.on("close", (code) => {
-    log(`Playwright process finished with code ${code}`);
+    log(`Playwright finished with code ${code}`);
   });
 
-  res.json({
-    ok: true,
-    message: "Playwright agent started"
-  });
+  res.json({ ok: true, message: "Playwright agent started" });
 });
 
 app.get("/debug-events", (req, res) => {
   const events = readJson(EVENTS_FILE, []);
 
-  const summary = events.map((event) => ({
-    eventType: event.eventType,
-    system: event.system,
-    url: event.url,
-    selectedText: event.selectedText || null,
-    inputValue: event.inputValue || null,
-    pastedText: event.pastedText || null,
-    elementText: event.element?.text || null,
-    elementSelector: event.element?.selector || null,
-    tableHeader: event.element?.tableHeader || null,
-    detailLabel: event.element?.detailLabel || null,
-    inputLabel: event.element?.inputLabel || null
+  const summary = events.map((e) => ({
+    eventType: e.eventType,
+    system: e.system,
+    url: e.url,
+    selectedText: e.selectedText || null,
+    inputValue: e.inputValue || null,
+    pastedText: e.pastedText || null,
+    elementText: e.element?.text || null,
+    elementSelector: e.element?.selector || null,
+    tableHeader: e.element?.tableHeader || null,
+    detailLabel: e.element?.detailLabel || null,
+    inputLabel: e.element?.inputLabel || null,
   }));
 
   res.json({
@@ -282,10 +414,11 @@ app.get("/debug-events", (req, res) => {
     originEvents: events.filter((e) => e.system === "origin").length,
     destinationEvents: events.filter((e) => e.system === "destination").length,
     unknownEvents: events.filter((e) => e.system === "unknown").length,
-    summary
+    summary,
   });
 });
 
 app.listen(PORT, () => {
   log(`Server running at http://localhost:${PORT}`);
+  log(`Gemini API: ${process.env.GEMINI_API_KEY ? "configured" : "NOT configured (heuristic only)"}`);
 });

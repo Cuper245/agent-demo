@@ -96,16 +96,18 @@ function getElementContext(element) {
 }
 
 function getSystemType() {
+  const hostname = window.location.hostname;
+
+  // URL-based detection for known systems
+  if (hostname.includes("valmart")) return "origin";
+  if (hostname.includes("arco-nine")) return "destination";
+
+  // Fallback: detect by page title or h1
   const title = document.title.toLowerCase();
   const heading = document.querySelector("h1")?.innerText?.toLowerCase() || "";
 
-  if (title.includes("origin") || heading.includes("origin")) {
-    return "origin";
-  }
-
-  if (title.includes("destination") || heading.includes("destination")) {
-    return "destination";
-  }
+  if (title.includes("origin") || heading.includes("origin")) return "origin";
+  if (title.includes("destination") || heading.includes("destination")) return "destination";
 
   return "unknown";
 }
@@ -214,3 +216,17 @@ document.addEventListener(
   },
   true
 );
+
+// Capture URL navigation changes (for SPA routing and login redirects)
+let _lastUrl = window.location.href;
+const _navObserver = new MutationObserver(() => {
+  const current = window.location.href;
+  if (current !== _lastUrl) {
+    _lastUrl = current;
+    sendRecorderEvent({ eventType: "navigate", navigatedTo: current });
+  }
+});
+_navObserver.observe(document.documentElement, { subtree: true, childList: true });
+
+// Send initial page load event so Gemini knows the starting URL
+sendRecorderEvent({ eventType: "pageload", pageTitle: document.title });

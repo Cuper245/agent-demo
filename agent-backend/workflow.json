@@ -1,13 +1,13 @@
 {
   "workflowName": "database_row_transfer",
   "origin": {
-    "url": "http://localhost:3000/",
+    "url": "https://valmart-ecru.vercel.app/",
     "rowSelector": "#orders-body tr",
     "cellSelector": "td",
     "tableHeadersSelector": "#origin-orders-table thead th"
   },
   "destination": {
-    "url": "http://localhost:3001/",
+    "url": "https://arco-nine.vercel.app/",
     "formSelector": "#destination-form",
     "submitSelector": "#save-order",
     "resultRowsSelector": "#registered-body tr"
