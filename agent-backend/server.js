@@ -66,30 +66,6 @@ app.post("/reset", (req, res) => {
   });
 });
 
-app.get("/debug-events", (req, res) => {
-  const events = readJson(EVENTS_FILE, []);
-
-  const summary = events.map((event) => ({
-    eventType: event.eventType,
-    system: event.system,
-    selectedText: event.selectedText || null,
-    inputValue: event.inputValue || null,
-    pastedText: event.pastedText || null,
-    elementText: event.element?.text || null,
-    elementSelector: event.element?.selector || null,
-    tableHeader: event.element?.tableHeader || null,
-    detailLabel: event.element?.detailLabel || null,
-    inputLabel: event.element?.inputLabel || null
-  }));
-
-  res.json({
-    totalEvents: events.length,
-    originEvents: events.filter((e) => e.system === "origin").length,
-    destinationEvents: events.filter((e) => e.system === "destination").length,
-    summary
-  });
-});
-
 app.post("/learn", (req, res) => {
   const events = readJson(EVENTS_FILE, []);
 
@@ -99,17 +75,34 @@ app.post("/learn", (req, res) => {
   const originUrl = originEvents[0]?.url || "http://localhost:3000";
   const destinationUrl = destinationEvents[0]?.url || "http://localhost:3001";
 
-  const copiedValues = originEvents
+  const originCopies = originEvents
     .filter((event) => event.eventType === "copy" && event.selectedText)
-    .map((event) => event.selectedText.trim())
-    .filter(Boolean);
+    .map((event) => ({
+        value: event.selectedText.trim(),
+        selector: event.element?.selector || null,
+        originField:
+        event.element?.dataField ||
+        event.element?.dataOriginField ||
+        null,
+        originLabel:
+        event.element?.detailLabel ||
+        event.element?.tableHeader ||
+        event.element?.dataField ||
+        event.element?.dataOriginField ||
+        null
+    }))
+    .filter((item) => item.value);
 
   const originClicks = originEvents
     .filter((event) => event.eventType === "click" && event.element?.text)
     .map((event) => ({
-      value: event.element.text.trim(),
-      selector: event.element.selector,
-      label:
+        value: event.element.text.trim(),
+        selector: event.element.selector,
+        originField:
+        event.element?.dataField ||
+        event.element?.dataOriginField ||
+        null,
+        originLabel:
         event.element.detailLabel ||
         event.element.tableHeader ||
         event.element.dataField ||
@@ -117,6 +110,8 @@ app.post("/learn", (req, res) => {
         null
     }))
     .filter((item) => item.value);
+
+  const originObservations = [...originCopies, ...originClicks];
 
   const destinationWrites = destinationEvents
     .filter(
@@ -146,33 +141,39 @@ app.post("/learn", (req, res) => {
 
   const mappings = [];
 
-  for (const origin of originClicks) {
+    for (const origin of originObservations) {
     const destination = finalDestinationWritesByValue.get(origin.value);
 
     if (destination) {
-      mappings.push({
-        originLabel: origin.label,
+        mappings.push({
+        originLabel: origin.originLabel,
+        originField: origin.originField,
         originSelector: origin.selector,
         destinationLabel: destination.label,
         destinationSelector: destination.selector,
         destinationField: destination.destinationField,
         observedValue: origin.value,
         confidence: 0.95
-      });
+        });
     }
-  }
+    }
 
   const uniqueMappings = [];
   const seen = new Set();
 
   for (const mapping of mappings) {
-    const key = `${mapping.originLabel}->${mapping.destinationSelector}`;
+    const key = `${mapping.originField || mapping.originLabel}->${mapping.destinationSelector}`;
 
     if (!seen.has(key)) {
-      seen.add(key);
-      uniqueMappings.push(mapping);
+        seen.add(key);
+        uniqueMappings.push(mapping);
     }
-  }
+    }
+
+  const copiedValues = originEvents
+    .filter((event) => event.eventType === "copy" && event.selectedText)
+    .map((event) => event.selectedText.trim())
+    .filter(Boolean);
 
   if (uniqueMappings.length === 0) {
     return res.status(400).json({
@@ -227,70 +228,6 @@ function generalizeDestinationListSelector(inputSelector) {
     // Later, this should also be learned from DOM context or LLM.
     return "#destination-list li label";
     }
-
-app.post("/learn-todos", (req, res) => {
-
-    const firstOriginClick = originEvents.find(
-    (event) =>
-        event.eventType === "click" &&
-        event.element?.text &&
-        event.element?.selector
-    );
-
-    const firstDestinationWrite = destinationEvents.find(
-    (event) =>
-        (event.eventType === "enter" || event.eventType === "paste") &&
-        event.element?.selector
-    );
-
-    const learnedOriginSelector = generalizeOriginSelector(
-    firstOriginClick?.element?.selector
-    );
-
-    const learnedDestinationInputSelector =
-    firstDestinationWrite?.element?.selector || ".new-todo";
-
-    const learnedDestinationListSelector =
-    generalizeDestinationListSelector(learnedDestinationInputSelector);
-
-    const workflow = {
-    workflowName: "copy_todos_from_origin_to_destination",
-    origin: {
-        url: originUrl,
-        listSelector: learnedOriginSelector
-    },
-    destination: {
-        url: destinationUrl,
-        inputSelector: learnedDestinationInputSelector,
-        listSelector: learnedDestinationListSelector
-    },
-    mapping: {
-        "origin.todoText": "destination.newTodoInput"
-    },
-    learnedFromObservation: true,
-    observedOriginTexts: originLabelsClicked,
-    observedDestinationInputs: transferredValues,
-    learnedSelectors: {
-        originClickedSelector: firstOriginClick?.element?.selector || null,
-        originGeneralizedSelector: learnedOriginSelector,
-        destinationInputSelector: learnedDestinationInputSelector,
-        destinationListSelector: learnedDestinationListSelector
-    },
-    explanation:
-        "The recorder observed text selected/clicked in the origin system and matching values typed or pasted into the destination input. It inferred that origin list item text maps to the destination input field.",
-    confidence: transferredValues.length > 0 ? 0.95 : 0.55,
-    createdAt: new Date().toISOString()
-    };
-
-  writeJson(WORKFLOW_FILE, workflow);
-
-  log("Workflow learned and saved.");
-
-  res.json({
-    ok: true,
-    workflow
-  });
-});
 
 app.get("/workflow", (req, res) => {
   const workflow = readJson(WORKFLOW_FILE, {});

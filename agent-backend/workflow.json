@@ -14,7 +14,78 @@
   },
   "mappings": [
     {
+      "originLabel": null,
+      "originField": null,
+      "originSelector": null,
+      "destinationLabel": "Internal Order ID",
+      "destinationSelector": "#internal-order-id",
+      "destinationField": "internalOrderId",
+      "observedValue": "PO-1001",
+      "confidence": 0.95
+    },
+    {
+      "originLabel": null,
+      "originField": null,
+      "originSelector": null,
+      "destinationLabel": "Client Chain",
+      "destinationSelector": "#client-chain",
+      "destinationField": "clientChain",
+      "observedValue": "Walmart",
+      "confidence": 0.95
+    },
+    {
+      "originLabel": null,
+      "originField": null,
+      "originSelector": null,
+      "destinationLabel": "Branch Code",
+      "destinationSelector": "#branch-code",
+      "destinationField": "branchCode",
+      "observedValue": "MTY-001",
+      "confidence": 0.95
+    },
+    {
+      "originLabel": null,
+      "originField": null,
+      "originSelector": null,
+      "destinationLabel": "Material Code",
+      "destinationSelector": "#material-code",
+      "destinationField": "materialCode",
+      "observedValue": "COKE-600",
+      "confidence": 0.95
+    },
+    {
+      "originLabel": null,
+      "originField": null,
+      "originSelector": null,
+      "destinationLabel": "Case Quantity",
+      "destinationSelector": "#case-quantity",
+      "destinationField": "caseQuantity",
+      "observedValue": "120",
+      "confidence": 0.95
+    },
+    {
+      "originLabel": null,
+      "originField": null,
+      "originSelector": null,
+      "destinationLabel": "Requested Delivery Date",
+      "destinationSelector": "#requested-delivery-date",
+      "destinationField": "requestedDeliveryDate",
+      "observedValue": "2026-06-10",
+      "confidence": 0.95
+    },
+    {
+      "originLabel": null,
+      "originField": null,
+      "originSelector": null,
+      "destinationLabel": "Logistics Notes",
+      "destinationSelector": "#logistics-notes",
+      "destinationField": "logisticsNotes",
+      "observedValue": "Deliver through dock 3",
+      "confidence": 0.95
+    },
+    {
       "originLabel": "Store ID",
+      "originField": "storeId",
       "originSelector": "[data-field=\"storeId\"]",
       "destinationLabel": "Branch Code",
       "destinationSelector": "#branch-code",
@@ -24,6 +95,7 @@
     },
     {
       "originLabel": "Units",
+      "originField": "units",
       "originSelector": "[data-field=\"units\"]",
       "destinationLabel": "Case Quantity",
       "destinationSelector": "#case-quantity",
@@ -33,11 +105,32 @@
     },
     {
       "originLabel": "Notes",
+      "originField": "notes",
       "originSelector": "[data-field=\"notes\"]",
       "destinationLabel": "Logistics Notes",
       "destinationSelector": "#logistics-notes",
       "destinationField": "logisticsNotes",
       "observedValue": "Deliver through dock 3",
+      "confidence": 0.95
+    },
+    {
+      "originLabel": "Customer",
+      "originField": "customer",
+      "originSelector": "[data-field=\"customer\"]",
+      "destinationLabel": "Client Chain",
+      "destinationSelector": "#client-chain",
+      "destinationField": "clientChain",
+      "observedValue": "Walmart",
+      "confidence": 0.95
+    },
+    {
+      "originLabel": "SKU",
+      "originField": "sku",
+      "originSelector": "[data-field=\"sku\"]",
+      "destinationLabel": "Material Code",
+      "destinationSelector": "#material-code",
+      "destinationField": "materialCode",
+      "observedValue": "COKE-600",
       "confidence": 0.95
     }
   ],
@@ -49,9 +142,16 @@
     "COKE-600",
     "120",
     "2026-06-10",
+    "Deliver through dock 3",
+    "PO-1001",
+    "Walmart",
+    "MTY-001",
+    "COKE-600",
+    "120",
+    "2026-06-10",
     "Deliver through dock 3"
   ],
   "explanation": "The recorder observed which origin cell values were copied or clicked and which destination form inputs received the same values. It inferred column-to-field mappings from matching values, labels, and selectors.",
   "confidence": 0.95,
-  "createdAt": "2026-06-07T03:35:13.340Z"
+  "createdAt": "2026-06-07T04:07:44.166Z"
 }

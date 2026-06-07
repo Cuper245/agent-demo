@@ -37,13 +37,26 @@ async function extractOriginRows(originPage, workflow) {
 
   for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
     const row = originPage.locator(workflow.origin.rowSelector).nth(rowIndex);
-    const cells = await row.locator(workflow.origin.cellSelector).allInnerTexts();
+    const cells = row.locator(workflow.origin.cellSelector);
+    const cellCount = await cells.count();
 
     const rowObject = {};
 
-    headers.forEach((header, index) => {
-      rowObject[header.trim()] = cells[index]?.trim() || "";
-    });
+    for (let cellIndex = 0; cellIndex < cellCount; cellIndex++) {
+      const cell = cells.nth(cellIndex);
+      const value = (await cell.innerText()).trim();
+
+      const header = headers[cellIndex]?.trim();
+      const dataField = await cell.getAttribute("data-field");
+
+      if (header) {
+        rowObject[header] = value;
+      }
+
+      if (dataField) {
+        rowObject[dataField] = value;
+      }
+    }
 
     rows.push(rowObject);
   }
@@ -96,14 +109,14 @@ async function main() {
     waitUntil: "domcontentloaded"
   });
 
-  console.log("Clearing destination for clean demo...");
+  /* console.log("Clearing destination for clean demo...");
   await destinationPage.evaluate(() => {
     localStorage.removeItem("destination_orders");
   });
 
   await destinationPage.goto(workflow.destination.url, {
     waitUntil: "domcontentloaded"
-  });
+  }); */
 
   console.log("Extracting origin rows...");
   const originRows = await extractOriginRows(originPage, workflow);
@@ -116,9 +129,9 @@ async function main() {
   console.log(existingDestinationIds);
 
   const rowsToTransfer = originRows.filter((row) => {
-    const poNumber = row["PO Number"];
+    const poNumber = row["PO Number"] || row["poNumber"];
     return poNumber && !existingDestinationIds.includes(poNumber);
-  });
+    });
 
   console.log("Rows to transfer:");
   console.log(JSON.stringify(rowsToTransfer, null, 2));
@@ -128,6 +141,7 @@ async function main() {
 
     for (const mapping of workflow.mappings) {
       const originLabel = mapping.originLabel;
+      const originField = mapping.originField;
       const destinationSelector = mapping.destinationSelector;
 
       if (!originLabel || !destinationSelector) {
@@ -136,7 +150,14 @@ async function main() {
         continue;
       }
 
-      const value = row[originLabel] || "";
+      const value =
+        row[originField] ||
+        row[originLabel] ||
+        "";
+
+      if (!value) {
+        console.log(`WARNING: No value found for mapping ${originLabel} / ${originField}`);
+        }  
 
       console.log(`${originLabel} → ${mapping.destinationLabel}: ${value}`);
 
