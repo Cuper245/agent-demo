@@ -31,7 +31,7 @@ def denorm(coord, size):
 
 def execute_action(page, fname, args):
     label = f"{fname}({dict(args)})"
-    print(f"  ▶ {label}")
+    print(f"  > {label}")
 
     # Narra la acción si la voz está activa
     if VOICE_ENABLED:
@@ -99,7 +99,7 @@ def execute_action(page, fname, args):
             print(f"    (unimplemented: {fname}, skipping)")
 
     except Exception as e:
-        print(f"    ✗ Error: {e}")
+        print(f"    x Error: {e}")
         # Narra el error
         if VOICE_ENABLED:
             voice.error_accion(fname, str(e))
@@ -216,7 +216,7 @@ Important rules:
             ]
 
             if not function_calls:
-                print("\n✔ Agent finished — no more actions.")
+                print("\nOk Agent finished — no more actions.")
                 turns_completed = turn + 1
                 break
 

@@ -1,6 +1,3 @@
-"""
-kaira_voice.py — Módulo de voz para KAIra usando ElevenLabs
-"""
 
 import os
 import threading
@@ -64,7 +61,7 @@ def speak(text: str, block: bool = False):
         print(f"[KAIra Voice] {text}")
         return
 
-    print(f"[KAIra Voice] 🔊 {text}")
+    print(f"[KAIra Voice] {text}")
 
     if block:
         _speak_async(text)
@@ -73,11 +70,10 @@ def speak(text: str, block: bool = False):
         t.start()
 
 
-# ── Frases con personalidad ───────────────────────────────────────────────────
 
 def saludo_inicio(workflow_name: str, n_mappings: int):
     speak(
-        f"Hola, soy KAIra. Aprendí el flujo {workflow_name} con {n_mappings} campos mapeados. "
+        f"Hola, soy KAIra. Aprendí el flujo. "
         f"Comenzando la transferencia automática."
     )
 
@@ -90,7 +86,7 @@ def anunciar_mapeos(mappings: list):
     )
     speak(
         f"Los campos que aprendí a transferir son: {resumen}. "
-        f"Esto lo inferí por observación, no por programación directa."
+        
     )
 
 def inicio_turno(turn: int, max_turns: int):
@@ -119,4 +115,4 @@ def error_accion(fname: str, error: str):
     speak(f"Tuve un problema al ejecutar {fname}. Continuando con el siguiente paso.")
 
 def agente_termino():
-    speak("He completado todas las acciones. El agente KAIra ha terminado su tarea.")
+    speak("He completado todas las acciones. ")
