@@ -2,6 +2,7 @@ import json
 import os
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
@@ -18,11 +19,32 @@ MODEL = "gemini-2.5-computer-use-preview-10-2025"
 
 
 def denorm(coord, size):
-    """Convert normalized 0-999 coordinate to actual pixels."""
     return int(coord / 1000 * size)
 
 
-def execute_action(page, fname, args):
+def same_host(url_a, url_b):
+    """Check if two URLs share the same hostname."""
+    try:
+        return urlparse(url_a).netloc == urlparse(url_b).netloc
+    except Exception:
+        return False
+
+
+def find_tab_for_url(url, tabs):
+    """Return the tab whose base URL matches the given URL, or None."""
+    for tab_url, page in tabs.items():
+        if same_host(url, tab_url):
+            return page
+    return None
+
+
+def execute_action(fname, args, state):
+    """
+    Execute a Computer Use action.
+    state = {"active": page, "tabs": {url: page, ...}}
+    May switch state["active"] when navigate targets another open tab.
+    """
+    page = state["active"]
     label = f"{fname}({dict(args)})"
     print(f"  → {label}")
 
@@ -31,7 +53,15 @@ def execute_action(page, fname, args):
             pass
 
         elif fname == "navigate":
-            page.goto(args["url"], wait_until="domcontentloaded", timeout=30000)
+            target_url = args["url"]
+            # Check if this URL belongs to an already-open tab
+            other_tab = find_tab_for_url(target_url, state["tabs"])
+            if other_tab and other_tab is not page:
+                print(f"    ↪ switching tab to {target_url}")
+                other_tab.bring_to_front()
+                state["active"] = other_tab
+            else:
+                page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
 
         elif fname == "click_at":
             page.mouse.click(denorm(args["x"], SCREEN_WIDTH), denorm(args["y"], SCREEN_HEIGHT))
@@ -62,8 +92,7 @@ def execute_action(page, fname, args):
             y = denorm(args["y"], SCREEN_HEIGHT)
             magnitude = args.get("magnitude", 300)
             direction = args.get("direction", "down")
-            delta_y = magnitude if direction == "down" else -magnitude
-            page.mouse.wheel(x, y, delta_x=0, delta_y=delta_y)
+            page.mouse.wheel(x, y, delta_x=0, delta_y=magnitude if direction == "down" else -magnitude)
 
         elif fname == "drag_and_drop":
             page.mouse.move(denorm(args["x"], SCREEN_WIDTH), denorm(args["y"], SCREEN_HEIGHT))
@@ -79,7 +108,7 @@ def execute_action(page, fname, args):
 
         elif fname == "wait_5_seconds":
             time.sleep(5)
-            return  # skip the default sleep below
+            return
 
         elif fname == "search":
             page.goto("https://www.google.com", wait_until="domcontentloaded")
@@ -93,7 +122,8 @@ def execute_action(page, fname, args):
     time.sleep(0.4)
 
 
-def capture_state(page):
+def capture_state(state):
+    page = state["active"]
     try:
         page.wait_for_load_state("domcontentloaded", timeout=8000)
     except Exception:
@@ -106,6 +136,7 @@ def main():
     workflow = json.loads(WORKFLOW_FILE.read_text())
     task_description = workflow.get("taskDescription", "")
     origin_url = workflow.get("originUrl", "")
+    destination_url = workflow.get("destinationUrl", "")
     field_mappings = workflow.get("fieldMappings", "")
 
     if not task_description:
@@ -135,26 +166,60 @@ def main():
         context = browser.new_context(
             viewport={"width": SCREEN_WIDTH, "height": SCREEN_HEIGHT}
         )
-        page = context.new_page()
 
-        # Navigate to starting point
-        start_url = origin_url or workflow.get("destinationUrl", "about:blank")
-        print(f"Opening: {start_url}")
-        page.goto(start_url, wait_until="domcontentloaded", timeout=30000)
+        # --- Open tabs ---
+        tabs = {}
+
+        if origin_url:
+            print(f"Opening tab 1 (origin): {origin_url}")
+            p1 = context.new_page()
+            p1.goto(origin_url, wait_until="domcontentloaded", timeout=30000)
+            tabs[origin_url] = p1
+
+        if destination_url and destination_url != origin_url:
+            print(f"Opening tab 2 (destination): {destination_url}")
+            p2 = context.new_page()
+            p2.goto(destination_url, wait_until="domcontentloaded", timeout=30000)
+            tabs[destination_url] = p2
+
+        if not tabs:
+            print("ERROR: no URLs in workflow.json")
+            return
+
+        # Start on first tab (origin, or destination if no origin)
+        first_page = tabs.get(origin_url) or list(tabs.values())[0]
+        first_page.bring_to_front()
         time.sleep(1.5)
 
-        initial_screenshot, current_url = capture_state(page)
+        state = {"active": first_page, "tabs": tabs}
 
-        # Build initial prompt with full context
-        full_prompt = f"""{task_description}
+        # --- Build prompt ---
+        arco_email = os.environ.get("ARCO_EMAIL", "")
+        arco_password = os.environ.get("ARCO_PASSWORD", "")
+        creds_hint = ""
+        if arco_email and arco_password:
+            creds_hint = f"\nCredentials to use if login is required: email={arco_email}, password={arco_password}"
+
+        tabs_description = "\n".join(
+            [f"  - Tab {i+1}: {url}" for i, url in enumerate(tabs.keys())]
+        )
+
+        full_prompt = f"""{task_description}{creds_hint}
+
+You have {len(tabs)} browser tab(s) open:
+{tabs_description}
+
+To switch between tabs, use the 'navigate' action with the target URL — the agent will bring the correct tab to the front automatically.
 
 Field mapping reference (from recorded example): {field_mappings}
 
 Important rules:
-- Complete the task fully and autonomously.
-- If you need to navigate between pages, do so.
+- Complete the task fully and autonomously across all tabs.
+- Use the navigate action to switch between tabs when needed.
 - Skip any order/item that already exists in the destination.
-- When done with all items, stop and summarize what you did."""
+- When done, stop and summarize what you did."""
+
+        initial_screenshot, current_url = capture_state(state)
 
         contents = [
             types.Content(
@@ -166,8 +231,9 @@ Important rules:
             )
         ]
 
+        # --- Agent loop ---
         for turn in range(MAX_TURNS):
-            print(f"\n--- Turn {turn + 1}/{MAX_TURNS} ---")
+            print(f"\n--- Turn {turn + 1}/{MAX_TURNS} | active tab: {state['active'].url} ---")
 
             response = client.models.generate_content(
                 model=MODEL,
@@ -178,31 +244,30 @@ Important rules:
             candidate = response.candidates[0]
             contents.append(candidate.content)
 
-            # Print any text reasoning
             for part in candidate.content.parts:
                 if hasattr(part, "text") and part.text:
                     print(f"  Gemini: {part.text[:200]}")
 
-            # Collect function calls
-            function_calls = [p.function_call for p in candidate.content.parts if hasattr(p, "function_call") and p.function_call]
+            function_calls = [
+                p.function_call
+                for p in candidate.content.parts
+                if hasattr(p, "function_call") and p.function_call
+            ]
 
             if not function_calls:
                 print("\n✓ Agent finished — no more actions.")
                 break
 
-            # Execute all actions and collect results
-            results = []
+            executed = []
             for fc in function_calls:
-                execute_action(page, fc.name, dict(fc.args))
-                results.append(fc.name)
+                execute_action(fc.name, dict(fc.args), state)
+                executed.append(fc.name)
 
-            # Capture new state
-            new_screenshot, new_url = capture_state(page)
-            print(f"  URL: {new_url}")
+            new_screenshot, new_url = capture_state(state)
+            print(f"  Current URL: {new_url}")
 
-            # Build function responses with screenshot
             response_parts = []
-            for name in results:
+            for name in executed:
                 response_parts.append(
                     types.Part(
                         function_response=types.FunctionResponse(
@@ -211,17 +276,19 @@ Important rules:
                         )
                     )
                 )
-
-            # Add screenshot as a separate part
             response_parts.append(
                 types.Part.from_bytes(data=new_screenshot, mime_type="image/png")
             )
 
             contents.append(types.Content(role="user", parts=response_parts))
 
-        print("\nAgent execution complete.")
-        time.sleep(5)
-        browser.close()
+        print("\nAgent execution complete. Browser will stay open — close it manually when done.")
+
+        # Keep the process alive until the user closes the browser window
+        try:
+            first_page.wait_for_event("close", timeout=0)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
