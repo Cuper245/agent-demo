@@ -11,19 +11,19 @@ const app = express();
 const PORT = 4000;
 
 const EVENTS_FILE = path.join(__dirname, "events.json");
+const SCREENSHOTS_FILE = path.join(__dirname, "screenshots.json");
 const WORKFLOW_FILE = path.join(__dirname, "workflow.json");
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 app.use(cors());
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "10mb" }));
 
 function readJson(filePath, fallback) {
   try {
     if (!fs.existsSync(filePath)) return fallback;
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch (error) {
-    console.error(`Failed to read ${filePath}:`, error);
+  } catch {
     return fallback;
   }
 }
@@ -36,113 +36,61 @@ function log(message) {
   console.log(`[Agent Backend] ${message}`);
 }
 
-// --- Gemini learner ---
+// --- Gemini learner (with vision) ---
 
-async function learnWithGemini(events) {
+async function learnWithGemini(events, screenshots) {
   const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const compactEvents = events.map((e) => {
-    const item = {
-      type: e.eventType,
-      system: e.system,
-      url: e.url,
-    };
+    const item = { type: e.eventType, system: e.system, url: e.url };
     if (e.selectedText) item.copiedText = e.selectedText;
     if (e.pastedText) item.pastedText = e.pastedText;
     if (e.inputValue) item.inputValue = e.inputValue;
     if (e.element) {
       item.element = {
         selector: e.element.selector,
-        label:
-          e.element.inputLabel ||
-          e.element.tableHeader ||
-          e.element.detailLabel ||
-          null,
+        label: e.element.inputLabel || e.element.tableHeader || e.element.detailLabel || null,
         placeholder: e.element.placeholder || null,
-        dataField:
-          e.element.dataField ||
-          e.element.dataOriginField ||
-          e.element.dataDestinationField ||
-          null,
+        dataField: e.element.dataField || e.element.dataOriginField || e.element.dataDestinationField || null,
         text: e.element.text?.slice(0, 150) || null,
       };
     }
     return item;
   });
 
-  const originUrl =
-    events.find((e) => e.system === "origin")?.url ||
-    "https://valmart-ecru.vercel.app/";
-  const destinationUrl =
-    events.find((e) => e.system === "destination")?.url ||
-    "https://arco-nine.vercel.app/";
+  const originUrl = events.find((e) => e.system === "origin")?.url || "https://valmart-ecru.vercel.app/";
+  const destinationUrl = events.find((e) => e.system === "destination")?.url || "https://arco-nine.vercel.app/";
 
-  const prompt = `You are an AI browser workflow learner.
+  const promptText = `You are an AI browser workflow analyst.
 
-A user performed actions in a browser. Analyze the recorded events and produce a reusable workflow JSON.
+A user manually performed a task in a browser. You have their recorded events and screenshots.
 
-WORKFLOW TYPES:
-1. "data_transfer" - User copied values from an "origin" system and pasted them into a "destination" system's form. Learn the field mappings so they can be automated for future rows.
-2. "action_sequence" - User performed a sequence of actions on one or more pages (e.g. login, form fill, button clicks). Learn the step-by-step actions to replay.
+Analyze what the user did and produce a workflow JSON so an AI agent can replay it autonomously.
 
-Choose the type that best fits the events.
-
-RECORDED EVENTS:
+RECORDED EVENTS (compact):
 ${JSON.stringify(compactEvents, null, 2)}
 
-For "data_transfer", return exactly this JSON shape (fill in real values from events):
+Origin URL: ${originUrl}
+Destination URL: ${destinationUrl}
+
+Return this EXACT JSON shape (no markdown, no explanation):
 {
-  "workflowType": "data_transfer",
-  "workflowName": "database_row_transfer",
-  "origin": {
-    "url": "${originUrl}",
-    "rowSelector": "#orders-body tr",
-    "cellSelector": "td",
-    "tableHeadersSelector": "#origin-orders-table thead th"
-  },
-  "destination": {
-    "url": "${destinationUrl}",
-    "formSelector": "#destination-form",
-    "submitSelector": "#save-order",
-    "resultRowsSelector": "#registered-body tr"
-  },
-  "mappings": [
-    {
-      "originLabel": "PO Number",
-      "originField": "poNumber",
-      "originSelector": "[data-field=\\"poNumber\\"]",
-      "destinationLabel": "Internal Order ID",
-      "destinationSelector": "#internal-order-id",
-      "destinationField": "internalOrderId",
-      "observedValue": "PO-1001",
-      "reason": "Value PO-1001 was copied from PO Number and pasted into Internal Order ID",
-      "confidence": 0.98
-    }
-  ]
-}
+  "workflowType": "computer_use",
+  "workflowName": "recorded_workflow",
+  "originUrl": "${originUrl}",
+  "destinationUrl": "${destinationUrl}",
+  "taskDescription": "A clear, complete instruction for an AI agent that will see a browser screen and must replay this exact workflow. Include: what site to start on, what actions to take, what data to transfer and how (which fields map to which), how to know when the task is done. Be specific and actionable.",
+  "fieldMappings": "Brief summary of origin→destination field mappings observed, e.g. PO Number→Internal Order ID, Customer→Client Chain"
+}`;
 
-For "action_sequence", return exactly this JSON shape (fill in real values from events):
-{
-  "workflowType": "action_sequence",
-  "workflowName": "recorded_flow",
-  "targetUrl": "https://example.com",
-  "steps": [
-    { "action": "navigate", "url": "https://example.com/login", "label": "Go to login" },
-    { "action": "fill", "selector": "#email", "value": "user@example.com", "label": "Enter email" },
-    { "action": "fill", "selector": "#password", "value": "secret", "label": "Enter password" },
-    { "action": "click", "selector": "button[type=submit]", "label": "Submit" },
-    { "action": "waitFor", "selector": ".dashboard", "label": "Wait for dashboard" }
-  ],
-  "variables": []
-}
+  // Build multimodal parts: text prompt + up to 3 screenshots
+  const parts = [{ text: promptText }];
+  for (const ss of screenshots.slice(0, 3)) {
+    const base64 = ss.screenshot.replace(/^data:image\/\w+;base64,/, "");
+    parts.push({ inlineData: { data: base64, mimeType: "image/png" } });
+  }
 
-Rules:
-- Return ONLY valid JSON. No explanation. No markdown code fences.
-- For data_transfer: use semantic field matching, not just exact value matches. Infer originField from camelCase of the originLabel.
-- For action_sequence: include all meaningful user interactions in order. Use the most stable selector available (id > data attribute > class).
-- Set confidence to 0.9+ when you are certain, lower when guessing.`;
-
-  const result = await model.generateContent(prompt);
+  const result = await model.generateContent(parts);
   const text = result.response.text().trim();
 
   const cleaned = text
@@ -154,16 +102,14 @@ Rules:
   return JSON.parse(cleaned);
 }
 
-// --- Heuristic learner (fallback) ---
+// --- Heuristic learner (fallback, produces data_transfer workflow) ---
 
 function learnWithHeuristic(events) {
   const originEvents = events.filter((e) => e.system === "origin");
   const destinationEvents = events.filter((e) => e.system === "destination");
 
-  const originUrl =
-    originEvents[0]?.url || "https://valmart-ecru.vercel.app/";
-  const destinationUrl =
-    destinationEvents[0]?.url || "https://arco-nine.vercel.app/";
+  const originUrl = originEvents[0]?.url || "https://valmart-ecru.vercel.app/";
+  const destinationUrl = destinationEvents[0]?.url || "https://arco-nine.vercel.app/";
 
   const originObservations = [
     ...originEvents
@@ -171,53 +117,35 @@ function learnWithHeuristic(events) {
       .map((e) => ({
         value: e.selectedText.trim(),
         selector: e.element?.selector || null,
-        originField:
-          e.element?.dataField || e.element?.dataOriginField || null,
-        originLabel:
-          e.element?.detailLabel ||
-          e.element?.tableHeader ||
-          e.element?.dataField ||
-          null,
+        originField: e.element?.dataField || e.element?.dataOriginField || null,
+        originLabel: e.element?.detailLabel || e.element?.tableHeader || e.element?.dataField || null,
       })),
     ...originEvents
       .filter((e) => e.eventType === "click" && e.element?.text)
       .map((e) => ({
         value: e.element.text.trim(),
         selector: e.element.selector,
-        originField:
-          e.element?.dataField || e.element?.dataOriginField || null,
-        originLabel:
-          e.element?.detailLabel ||
-          e.element?.tableHeader ||
-          e.element?.dataField ||
-          null,
+        originField: e.element?.dataField || e.element?.dataOriginField || null,
+        originLabel: e.element?.detailLabel || e.element?.tableHeader || e.element?.dataField || null,
       })),
   ].filter((item) => item.value);
 
   const destinationWrites = destinationEvents
     .filter(
       (e) =>
-        (e.eventType === "input" ||
-          e.eventType === "change" ||
-          e.eventType === "paste") &&
+        (e.eventType === "input" || e.eventType === "change" || e.eventType === "paste") &&
         (e.inputValue || e.pastedText)
     )
     .map((e) => ({
       value: (e.inputValue || e.pastedText || "").trim(),
       selector: e.element?.selector,
-      label:
-        e.element?.inputLabel ||
-        e.element?.dataDestinationField ||
-        e.element?.placeholder ||
-        null,
+      label: e.element?.inputLabel || e.element?.dataDestinationField || e.element?.placeholder || null,
       destinationField: e.element?.dataDestinationField || null,
     }))
     .filter((item) => item.value);
 
   const destByValue = new Map();
-  for (const write of destinationWrites) {
-    destByValue.set(write.value, write);
-  }
+  for (const write of destinationWrites) destByValue.set(write.value, write);
 
   const seen = new Set();
   const mappings = [];
@@ -225,11 +153,9 @@ function learnWithHeuristic(events) {
   for (const origin of originObservations) {
     const destination = destByValue.get(origin.value);
     if (!destination) continue;
-
     const key = `${origin.originField || origin.originLabel}->${destination.selector}`;
     if (seen.has(key)) continue;
     seen.add(key);
-
     mappings.push({
       originLabel: origin.originLabel,
       originField: origin.originField,
@@ -280,51 +206,45 @@ app.get("/events", (req, res) => {
   res.json(readJson(EVENTS_FILE, []));
 });
 
+app.post("/screenshot", (req, res) => {
+  const { screenshot, triggerEvent, system, url, timestamp } = req.body;
+  const screenshots = readJson(SCREENSHOTS_FILE, []);
+  // Keep max 10 screenshots to avoid huge files
+  if (screenshots.length < 10) {
+    screenshots.push({ screenshot, triggerEvent, system, url, timestamp });
+    writeJson(SCREENSHOTS_FILE, screenshots);
+  }
+  log(`Screenshot saved: ${triggerEvent} | ${system} | total: ${screenshots.length}`);
+  res.json({ ok: true, total: screenshots.length });
+});
+
 app.post("/reset", (req, res) => {
   writeJson(EVENTS_FILE, []);
-  res.json({ ok: true, message: "Events reset" });
+  writeJson(SCREENSHOTS_FILE, []);
+  res.json({ ok: true, message: "Events and screenshots reset" });
 });
 
 app.post("/learn", async (req, res) => {
   const events = readJson(EVENTS_FILE, []);
+  const screenshots = readJson(SCREENSHOTS_FILE, []);
 
   if (events.length === 0) {
-    return res.status(400).json({
-      ok: false,
-      error: "No events recorded. Start recording first.",
-    });
+    return res.status(400).json({ ok: false, error: "No events recorded. Start recording first." });
   }
 
   let workflow = null;
   let learner = "gemini";
 
-  // Try Gemini first
   if (process.env.GEMINI_API_KEY) {
     try {
-      log("Calling Gemini to learn workflow...");
-      workflow = await learnWithGemini(events);
+      log(`Calling Gemini to learn workflow... (${events.length} events, ${screenshots.length} screenshots)`);
+      workflow = await learnWithGemini(events, screenshots);
 
-      if (!workflow || !workflow.workflowType) {
+      if (!workflow || !workflow.workflowType || !workflow.taskDescription) {
         throw new Error("Gemini returned invalid workflow");
       }
 
-      // For data_transfer: require at least one mapping
-      if (
-        workflow.workflowType === "data_transfer" &&
-        (!workflow.mappings || workflow.mappings.length === 0)
-      ) {
-        throw new Error("Gemini returned no mappings");
-      }
-
-      // For action_sequence: require at least one step
-      if (
-        workflow.workflowType === "action_sequence" &&
-        (!workflow.steps || workflow.steps.length === 0)
-      ) {
-        throw new Error("Gemini returned no steps");
-      }
-
-      log(`Gemini learned workflow: ${workflow.workflowType} (${workflow.workflowName})`);
+      log(`Gemini learned: ${workflow.workflowType} — "${workflow.taskDescription.slice(0, 80)}..."`);
     } catch (err) {
       log(`Gemini failed: ${err.message} — falling back to heuristic`);
       workflow = null;
@@ -332,24 +252,18 @@ app.post("/learn", async (req, res) => {
     }
   }
 
-  // Fall back to heuristic
   if (!workflow) {
     learner = "heuristic";
     workflow = learnWithHeuristic(events);
 
-    if (
-      workflow.workflowType === "data_transfer" &&
-      workflow.mappings.length === 0
-    ) {
+    if (workflow.workflowType === "data_transfer" && workflow.mappings.length === 0) {
       return res.status(400).json({
         ok: false,
-        error:
-          "No mappings learned. The recorder did not capture matching origin and destination values.",
+        error: "No mappings learned. Make sure to copy values from origin and paste into destination.",
         debug: {
           totalEvents: events.length,
           originEvents: events.filter((e) => e.system === "origin").length,
-          destinationEvents: events.filter((e) => e.system === "destination")
-            .length,
+          destinationEvents: events.filter((e) => e.system === "destination").length,
         },
       });
     }
@@ -357,10 +271,11 @@ app.post("/learn", async (req, res) => {
 
   workflow.learnedBy = learner;
   workflow.learnedFromObservation = true;
+  workflow.screenshotsCaptured = screenshots.length;
   workflow.createdAt = new Date().toISOString();
 
   writeJson(WORKFLOW_FILE, workflow);
-  log(`Workflow saved (learner: ${learner}).`);
+  log(`Workflow saved (learner: ${learner}, type: ${workflow.workflowType}).`);
 
   res.json({ ok: true, learner, workflow });
 });
@@ -370,30 +285,29 @@ app.get("/workflow", (req, res) => {
 });
 
 app.post("/play", (req, res) => {
-  log("Starting Playwright execution...");
+  const workflow = readJson(WORKFLOW_FILE, {});
+  const workflowType = workflow.workflowType || "data_transfer";
 
-  const child = spawn("node", ["run-playwright.js"], {
-    cwd: __dirname,
-    shell: true,
-  });
+  log(`Starting agent (type: ${workflowType})...`);
 
-  child.stdout.on("data", (data) => {
-    process.stdout.write(`[Playwright] ${data}`);
-  });
+  let child;
 
-  child.stderr.on("data", (data) => {
-    process.stderr.write(`[Playwright Error] ${data}`);
-  });
+  if (workflowType === "computer_use") {
+    child = spawn("python3", ["run-computer-use.py"], { cwd: __dirname, shell: true });
+  } else {
+    child = spawn("node", ["run-playwright.js"], { cwd: __dirname, shell: true });
+  }
 
-  child.on("close", (code) => {
-    log(`Playwright finished with code ${code}`);
-  });
+  child.stdout.on("data", (data) => process.stdout.write(`[Agent] ${data}`));
+  child.stderr.on("data", (data) => process.stderr.write(`[Agent Error] ${data}`));
+  child.on("close", (code) => log(`Agent finished with code ${code}`));
 
-  res.json({ ok: true, message: "Playwright agent started" });
+  res.json({ ok: true, message: `Agent started (${workflowType})` });
 });
 
 app.get("/debug-events", (req, res) => {
   const events = readJson(EVENTS_FILE, []);
+  const screenshots = readJson(SCREENSHOTS_FILE, []);
 
   const summary = events.map((e) => ({
     eventType: e.eventType,
@@ -402,10 +316,8 @@ app.get("/debug-events", (req, res) => {
     selectedText: e.selectedText || null,
     inputValue: e.inputValue || null,
     pastedText: e.pastedText || null,
-    elementText: e.element?.text || null,
     elementSelector: e.element?.selector || null,
     tableHeader: e.element?.tableHeader || null,
-    detailLabel: e.element?.detailLabel || null,
     inputLabel: e.element?.inputLabel || null,
   }));
 
@@ -414,11 +326,12 @@ app.get("/debug-events", (req, res) => {
     originEvents: events.filter((e) => e.system === "origin").length,
     destinationEvents: events.filter((e) => e.system === "destination").length,
     unknownEvents: events.filter((e) => e.system === "unknown").length,
+    screenshotsCaptured: screenshots.length,
     summary,
   });
 });
 
 app.listen(PORT, () => {
   log(`Server running at http://localhost:${PORT}`);
-  log(`Gemini API: ${process.env.GEMINI_API_KEY ? "configured" : "NOT configured (heuristic only)"}`);
+  log(`Gemini API: ${process.env.GEMINI_API_KEY ? "configured ✓" : "NOT configured"}`);
 });
