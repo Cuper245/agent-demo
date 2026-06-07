@@ -11,6 +11,14 @@ from playwright.sync_api import sync_playwright
 from google import genai
 from google.genai import types
 
+# ── Importa el módulo de voz de KAIra ────────────────────────────────────────
+try:
+    import kaira_voice as voice
+    VOICE_ENABLED = True
+except ImportError:
+    VOICE_ENABLED = False
+    print("[KAIra] Módulo de voz no encontrado — continuando sin voz")
+
 load_dotenv()
 
 WORKFLOW_FILE = Path(__file__).parent / "workflow.json"
@@ -100,9 +108,13 @@ def find_tab_for_url(url, tabs):
 
 # ─── Action executor ──────────────────────────────────────────────────────────
 
-def execute_action(fname, args, state):
-    page = state["active"]
-    print(f"  → {fname}({dict(args)})")
+def execute_action(page, fname, args):
+    label = f"{fname}({dict(args)})"
+    print(f"  > {label}")
+
+    # Narra la acción si la voz está activa
+    if VOICE_ENABLED:
+        voice.accion_ejecutada(fname, dict(args))
 
     try:
         if fname == "open_web_browser":
@@ -142,10 +154,19 @@ def execute_action(fname, args, state):
             page.keyboard.press("PageDown" if direction == "down" else "PageUp")
 
         elif fname == "scroll_at":
+<<<<<<< HEAD
             x, y = denorm(args["x"], SCREEN_WIDTH), denorm(args["y"], SCREEN_HEIGHT)
             magnitude = args.get("magnitude", 300)
             direction = args.get("direction", "down")
             page.mouse.wheel(x, y, delta_x=0, delta_y=magnitude if direction == "down" else -magnitude)
+=======
+            x = denorm(args["x"], SCREEN_WIDTH)
+            y = denorm(args["y"], SCREEN_HEIGHT)
+            magnitude  = args.get("magnitude", 300)
+            direction  = args.get("direction", "down")
+            delta_y    = magnitude if direction == "down" else -magnitude
+            page.mouse.wheel(x, y, delta_x=0, delta_y=delta_y)
+>>>>>>> ana
 
         elif fname == "drag_and_drop":
             page.mouse.move(denorm(args["x"], SCREEN_WIDTH), denorm(args["y"], SCREEN_HEIGHT))
@@ -170,7 +191,10 @@ def execute_action(fname, args, state):
             print(f"    (unimplemented: {fname}, skipping)")
 
     except Exception as e:
-        print(f"    ✗ Error: {e}")
+        print(f"    x Error: {e}")
+        # Narra el error
+        if VOICE_ENABLED:
+            voice.error_accion(fname, str(e))
 
     time.sleep(0.2)   # reduced from 0.4
 
@@ -205,6 +229,13 @@ def main():
     print(f"Learned  : {workflow.get('learnedBy', '?')}")
     print(f"Task     : {task_description[:120]}...")
     print(f"{'='*60}\n")
+
+    # ── Saludo inicial con personalidad ──────────────────────────────────────
+    if VOICE_ENABLED:
+        voice.saludo_inicio(workflow_name, len(mappings_list))
+        time.sleep(2)  # deja que termine de hablar antes de abrir el browser
+        voice.anunciar_mapeos(mappings_list)
+        time.sleep(3)
 
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     config = types.GenerateContentConfig(
@@ -320,6 +351,10 @@ STEP 5 — Final validation:
             active_url_before = state["active"].url
             print(f"\n--- Turn {turn_num}/{MAX_TURNS} | {active_url_before} ---")
 
+            # Narra turnos clave
+            if VOICE_ENABLED:
+                voice.inicio_turno(turn + 1, MAX_TURNS)
+
             response = client.models.generate_content(
                 model=MODEL,
                 contents=contents,
@@ -337,7 +372,10 @@ STEP 5 — Final validation:
                     print(f"  Gemini: {part.text[:200]}")
             reasoning = " ".join(reasoning_parts)
 
+<<<<<<< HEAD
             # Collect function calls
+=======
+>>>>>>> ana
             function_calls = [
                 p.function_call
                 for p in candidate.content.parts
@@ -345,6 +383,7 @@ STEP 5 — Final validation:
             ]
 
             if not function_calls:
+<<<<<<< HEAD
                 final_summary = reasoning or "No further actions."
                 print("\n✓ Agent finished.")
                 # Log final state
@@ -361,11 +400,19 @@ STEP 5 — Final validation:
 
             # Execute actions and log them
             executed_actions = []
+=======
+                print("\nOk Agent finished — no more actions.")
+                turns_completed = turn + 1
+                break
+
+            results = []
+>>>>>>> ana
             for fc in function_calls:
                 action_entry = {"name": fc.name, "args": dict(fc.args)}
                 execute_action(fc.name, dict(fc.args), state)
                 executed_actions.append(action_entry)
 
+<<<<<<< HEAD
             new_screenshot, new_url = capture_state(state)
             print(f"  URL after: {new_url}")
 
@@ -379,6 +426,11 @@ STEP 5 — Final validation:
             )
 
             # Build function responses
+=======
+            new_screenshot, new_url = capture_state(page)
+            print(f"  URL: {new_url}")
+
+>>>>>>> ana
             response_parts = []
             for fc in function_calls:
                 response_parts.append(
@@ -389,11 +441,16 @@ STEP 5 — Final validation:
                         )
                     )
                 )
+<<<<<<< HEAD
+=======
+
+>>>>>>> ana
             response_parts.append(
                 types.Part.from_bytes(data=new_screenshot, mime_type="image/png")
             )
             contents.append(types.Content(role="user", parts=response_parts))
 
+<<<<<<< HEAD
         logger.finish(final_summary)
         print("\nAgent execution complete. Close the browser when done.")
 
@@ -401,6 +458,15 @@ STEP 5 — Final validation:
             first_page.wait_for_event("close", timeout=0)
         except Exception:
             pass
+=======
+        # ── Mensaje final ─────────────────────────────────────────────────────
+        if VOICE_ENABLED:
+            voice.agente_termino()
+
+        print("\nAgent execution complete.")
+        time.sleep(5)
+        browser.close()
+>>>>>>> ana
 
 
 if __name__ == "__main__":
