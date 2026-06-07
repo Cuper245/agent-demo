@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Destination Orders</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f7fb;
+      margin: 0;
+      padding: 32px;
+      color: #222;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      color: #1f4f99;
+    }
+
+    .subtitle {
+      margin-bottom: 24px;
+      color: #666;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 0.8fr 1.2fr;
+      gap: 24px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+      padding: 20px;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      color: #555;
+      margin-bottom: 6px;
+    }
+
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px;
+      border: 1px solid #ccd3e0;
+      border-radius: 8px;
+      font-size: 15px;
+      margin-bottom: 14px;
+    }
+
+    button {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #1f4f99;
+      color: white;
+      margin-right: 8px;
+    }
+
+    .secondary {
+      background: #777;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th {
+      background: #f0f2f7;
+      text-align: left;
+      padding: 10px;
+      border-bottom: 1px solid #ddd;
+    }
+
+    td {
+      padding: 10px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .hint {
+      margin-top: 16px;
+      color: #777;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <h1>Destination Internal System</h1>
+  <div class="subtitle">Internal order registration database</div>
+
+  <div class="layout">
+    <section class="card">
+      <h2>New Internal Order</h2>
+
+      <form id="destination-form">
+        <label for="branch-code">Branch Code</label>
+        <input id="branch-code" data-destination-field="branchCode" placeholder="Example: MTY-001" />
+
+        <label for="internal-order-id">Internal Order ID</label>
+        <input id="internal-order-id" data-destination-field="internalOrderId" placeholder="Example: PO-1001" />
+
+        <label for="material-code">Material Code</label>
+        <input id="material-code" data-destination-field="materialCode" placeholder="Example: COKE-600" />
+
+        <label for="client-chain">Client Chain</label>
+        <input id="client-chain" data-destination-field="clientChain" placeholder="Example: Walmart" />
+
+        <label for="logistics-notes">Logistics Notes</label>
+        <input id="logistics-notes" data-destination-field="logisticsNotes" placeholder="Example: Dock 3" />
+
+        <label for="case-quantity">Case Quantity</label>
+        <input id="case-quantity" data-destination-field="caseQuantity" placeholder="Example: 120" />
+
+        <label for="requested-delivery-date">Requested Delivery Date</label>
+        <input id="requested-delivery-date" data-destination-field="requestedDeliveryDate" placeholder="Example: 2026-06-10" />
+
+        <button type="submit" id="save-order">Save Order</button>
+        <button type="button" class="secondary" id="clear-orders">Clear Destination</button>
+      </form>
+
+      <p class="hint">
+        Field names and order are intentionally different from the origin system.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Registered Orders</h2>
+
+      <table id="registered-orders-table">
+        <thead>
+          <tr>
+            <th>Branch Code</th>
+            <th>Internal Order ID</th>
+            <th>Material Code</th>
+            <th>Client Chain</th>
+            <th>Logistics Notes</th>
+            <th>Case Quantity</th>
+            <th>Requested Delivery Date</th>
+          </tr>
+        </thead>
+        <tbody id="registered-body"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "destination_orders";
+
+    const form = document.getElementById("destination-form");
+    const registeredBody = document.getElementById("registered-body");
+    const clearOrdersButton = document.getElementById("clear-orders");
+
+    function getOrders() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+      return [];
+    }
+
+    function saveOrders(orders) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+    }
+
+    function getFormData() {
+      return {
+        branchCode: document.getElementById("branch-code").value.trim(),
+        internalOrderId: document.getElementById("internal-order-id").value.trim(),
+        materialCode: document.getElementById("material-code").value.trim(),
+        clientChain: document.getElementById("client-chain").value.trim(),
+        logisticsNotes: document.getElementById("logistics-notes").value.trim(),
+        caseQuantity: document.getElementById("case-quantity").value.trim(),
+        requestedDeliveryDate: document.getElementById("requested-delivery-date").value.trim()
+      };
+    }
+
+    function clearForm() {
+      form.querySelectorAll("input").forEach((input) => {
+        input.value = "";
+      });
+    }
+
+    function renderOrders() {
+      const orders = getOrders();
+
+      registeredBody.innerHTML = "";
+
+      orders.forEach((order) => {
+        const tr = document.createElement("tr");
+
+        tr.innerHTML = `
+          <td data-field="branchCode">${order.branchCode}</td>
+          <td data-field="internalOrderId">${order.internalOrderId}</td>
+          <td data-field="materialCode">${order.materialCode}</td>
+          <td data-field="clientChain">${order.clientChain}</td>
+          <td data-field="logisticsNotes">${order.logisticsNotes}</td>
+          <td data-field="caseQuantity">${order.caseQuantity}</td>
+          <td data-field="requestedDeliveryDate">${order.requestedDeliveryDate}</td>
+        `;
+
+        registeredBody.appendChild(tr);
+      });
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+
+      const newOrder = getFormData();
+
+      const orders = getOrders();
+      orders.push(newOrder);
+      saveOrders(orders);
+
+      clearForm();
+      renderOrders();
+    });
+
+    clearOrdersButton.addEventListener("click", () => {
+      localStorage.removeItem(STORAGE_KEY);
+      renderOrders();
+    });
+
+    renderOrders();
+  </script>
+</body>
+</html>

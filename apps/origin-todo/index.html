@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Origin Orders</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f7fb;
+      margin: 0;
+      padding: 32px;
+      color: #222;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      color: #9b1c1c;
+    }
+
+    .subtitle {
+      margin-bottom: 24px;
+      color: #666;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 24px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+      padding: 20px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 15px;
+    }
+
+    th {
+      background: #f0f2f7;
+      text-align: left;
+      padding: 12px;
+      border-bottom: 1px solid #ddd;
+    }
+
+    td {
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+    }
+
+    tr:hover td {
+      background: #fff8e8;
+    }
+
+    tr.selected td {
+      background: #ffe8b5;
+    }
+
+    .detail-row {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      padding: 10px 0;
+      border-bottom: 1px solid #eee;
+      gap: 12px;
+    }
+
+    .label {
+      color: #666;
+      font-weight: bold;
+    }
+
+    .value {
+      color: #111;
+      user-select: text;
+    }
+
+    .hint {
+      margin-top: 16px;
+      color: #777;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    button {
+      padding: 10px 14px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #9b1c1c;
+      color: white;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Origin Retailer Portal</h1>
+  <div class="subtitle">External customer order database</div>
+
+  <div class="layout">
+    <section class="card">
+      <h2>Purchase Orders</h2>
+
+      <table id="origin-orders-table">
+        <thead>
+          <tr>
+            <th>PO Number</th>
+            <th>Customer</th>
+            <th>Store ID</th>
+            <th>SKU</th>
+            <th>Units</th>
+            <th>Delivery Date</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="orders-body"></tbody>
+      </table>
+
+      <button id="add-demo-order">Add new unseen order</button>
+
+      <p class="hint">
+        During recording, manually transfer only one order. During Play, the agent should transfer a different order.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Selected Order Detail</h2>
+      <div id="order-detail"></div>
+    </section>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "origin_orders";
+
+    const defaultOrders = [
+      {
+        poNumber: "PO-1001",
+        customer: "Walmart",
+        storeId: "MTY-001",
+        sku: "COKE-600",
+        units: "120",
+        deliveryDate: "2026-06-10",
+        notes: "Deliver through dock 3"
+      },
+      {
+        poNumber: "PO-1002",
+        customer: "Soriana",
+        storeId: "GDL-014",
+        sku: "FANTA-355",
+        units: "80",
+        deliveryDate: "2026-06-12",
+        notes: "Morning delivery"
+      },
+      {
+        poNumber: "PO-1003",
+        customer: "Chedraui",
+        storeId: "QRO-021",
+        sku: "SPRITE-500",
+        units: "60",
+        deliveryDate: "2026-06-15",
+        notes: "Call before arrival"
+      }
+    ];
+
+    const fieldLabels = {
+      poNumber: "PO Number",
+      customer: "Customer",
+      storeId: "Store ID",
+      sku: "SKU",
+      units: "Units",
+      deliveryDate: "Delivery Date",
+      notes: "Notes"
+    };
+
+    const tableBody = document.getElementById("orders-body");
+    const detail = document.getElementById("order-detail");
+    const addDemoOrderButton = document.getElementById("add-demo-order");
+
+    let selectedIndex = 0;
+
+    function getOrders() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultOrders));
+      return defaultOrders;
+    }
+
+    function saveOrders(orders) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+    }
+
+    function renderTable() {
+      const orders = getOrders();
+
+      tableBody.innerHTML = "";
+
+      orders.forEach((order, index) => {
+        const tr = document.createElement("tr");
+        tr.className = index === selectedIndex ? "selected" : "";
+        tr.dataset.rowIndex = String(index);
+
+        tr.innerHTML = `
+          <td data-field="poNumber">${order.poNumber}</td>
+          <td data-field="customer">${order.customer}</td>
+          <td data-field="storeId">${order.storeId}</td>
+          <td data-field="sku">${order.sku}</td>
+          <td data-field="units">${order.units}</td>
+          <td data-field="deliveryDate">${order.deliveryDate}</td>
+          <td data-field="notes">${order.notes}</td>
+        `;
+
+        tr.addEventListener("click", () => {
+          selectedIndex = index;
+          renderTable();
+          renderDetail();
+        });
+
+        tableBody.appendChild(tr);
+      });
+    }
+
+    function renderDetail() {
+      const orders = getOrders();
+      const order = orders[selectedIndex];
+
+      detail.innerHTML = "";
+
+      Object.keys(fieldLabels).forEach((key) => {
+        const row = document.createElement("div");
+        row.className = "detail-row";
+        row.dataset.originField = key;
+
+        row.innerHTML = `
+          <div class="label">${fieldLabels[key]}</div>
+          <div class="value" data-field="${key}">${order[key]}</div>
+        `;
+
+        detail.appendChild(row);
+      });
+    }
+
+    addDemoOrderButton.addEventListener("click", () => {
+      const orders = getOrders();
+
+      orders.push({
+        poNumber: "PO-2004",
+        customer: "OXXO",
+        storeId: "NLE-088",
+        sku: "TOPO-355",
+        units: "150",
+        deliveryDate: "2026-06-18",
+        notes: "Night receiving only"
+      });
+
+      saveOrders(orders);
+      selectedIndex = orders.length - 1;
+      renderTable();
+      renderDetail();
+    });
+
+    renderTable();
+    renderDetail();
+  </script>
+</body>
+</html>

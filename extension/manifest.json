@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Agent Demo Recorder",
+  "version": "1.0.0",
+  "description": "Records manual browser actions for the agent demo.",
+  "permissions": ["storage", "tabs", "scripting"],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "http://localhost:3001/*",
+    "http://localhost:4000/*",
+    "http://127.0.0.1:3000/*",
+    "http://127.0.0.1:3001/*",
+    "http://127.0.0.1:4000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Agent Recorder"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:3000/*",
+        "http://localhost:3001/*",
+        "http://127.0.0.1:3000/*",
+        "http://127.0.0.1:3001/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}   

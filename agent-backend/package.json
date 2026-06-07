@@ -1,0 +1,16 @@
+{
+  "name": "agent-demo-backend",
+  "version": "1.0.0",
+  "description": "Backend for Chrome Extension + Playwright + LLM agent demo.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "play": "node run-playwright.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.3",
+    "playwright": "^1.42.1"
+  },
+  "devDependencies": {}
+}

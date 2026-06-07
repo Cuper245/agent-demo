@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Agent Recorder</title>
+  <style>
+    body {
+      width: 260px;
+      font-family: Arial, sans-serif;
+      padding: 14px;
+    }
+
+    h2 {
+      margin-top: 0;
+      font-size: 18px;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px;
+      margin: 6px 0;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .start {
+      background: #2e7d32;
+      color: white;
+    }
+
+    .stop {
+      background: #c62828;
+      color: white;
+    }
+
+    .play {
+      background: #1565c0;
+      color: white;
+    }
+
+    .status {
+      margin-top: 10px;
+      padding: 8px;
+      background: #f3f3f3;
+      border-radius: 6px;
+      font-size: 13px;
+      white-space: pre-wrap;
+      max-height: 120px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <h2>Agent Recorder</h2>
+
+  <button class="start" id="start">Start Recording</button>
+  <button class="stop" id="stop">Stop + Learn</button>
+  <button class="play" id="play">Play Agent</button>
+
+  <div class="status" id="status">Idle</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

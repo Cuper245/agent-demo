@@ -1,0 +1,57 @@
+{
+  "workflowName": "database_row_transfer",
+  "origin": {
+    "url": "http://localhost:3000/",
+    "rowSelector": "#orders-body tr",
+    "cellSelector": "td",
+    "tableHeadersSelector": "#origin-orders-table thead th"
+  },
+  "destination": {
+    "url": "http://localhost:3001/",
+    "formSelector": "#destination-form",
+    "submitSelector": "#save-order",
+    "resultRowsSelector": "#registered-body tr"
+  },
+  "mappings": [
+    {
+      "originLabel": "Store ID",
+      "originSelector": "[data-field=\"storeId\"]",
+      "destinationLabel": "Branch Code",
+      "destinationSelector": "#branch-code",
+      "destinationField": "branchCode",
+      "observedValue": "MTY-001",
+      "confidence": 0.95
+    },
+    {
+      "originLabel": "Units",
+      "originSelector": "[data-field=\"units\"]",
+      "destinationLabel": "Case Quantity",
+      "destinationSelector": "#case-quantity",
+      "destinationField": "caseQuantity",
+      "observedValue": "120",
+      "confidence": 0.95
+    },
+    {
+      "originLabel": "Notes",
+      "originSelector": "[data-field=\"notes\"]",
+      "destinationLabel": "Logistics Notes",
+      "destinationSelector": "#logistics-notes",
+      "destinationField": "logisticsNotes",
+      "observedValue": "Deliver through dock 3",
+      "confidence": 0.95
+    }
+  ],
+  "learnedFromObservation": true,
+  "observedCopiedValues": [
+    "PO-1001",
+    "Walmart",
+    "MTY-001",
+    "COKE-600",
+    "120",
+    "2026-06-10",
+    "Deliver through dock 3"
+  ],
+  "explanation": "The recorder observed which origin cell values were copied or clicked and which destination form inputs received the same values. It inferred column-to-field mappings from matching values, labels, and selectors.",
+  "confidence": 0.95,
+  "createdAt": "2026-06-07T03:35:13.340Z"
+}
