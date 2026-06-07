@@ -1,0 +1,4 @@
+node_modules/
+playwright-profile/
+events.json
+.env
