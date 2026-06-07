@@ -108,7 +108,8 @@ def find_tab_for_url(url, tabs):
 
 # ─── Action executor ──────────────────────────────────────────────────────────
 
-def execute_action(page, fname, args):
+def execute_action(fname, args, state):
+    page = state["active"]
     label = f"{fname}({dict(args)})"
     print(f"  > {label}")
 
@@ -154,19 +155,12 @@ def execute_action(page, fname, args):
             page.keyboard.press("PageDown" if direction == "down" else "PageUp")
 
         elif fname == "scroll_at":
-<<<<<<< HEAD
-            x, y = denorm(args["x"], SCREEN_WIDTH), denorm(args["y"], SCREEN_HEIGHT)
-            magnitude = args.get("magnitude", 300)
-            direction = args.get("direction", "down")
-            page.mouse.wheel(x, y, delta_x=0, delta_y=magnitude if direction == "down" else -magnitude)
-=======
             x = denorm(args["x"], SCREEN_WIDTH)
             y = denorm(args["y"], SCREEN_HEIGHT)
-            magnitude  = args.get("magnitude", 300)
-            direction  = args.get("direction", "down")
-            delta_y    = magnitude if direction == "down" else -magnitude
+            magnitude = args.get("magnitude", 300)
+            direction = args.get("direction", "down")
+            delta_y = magnitude if direction == "down" else -magnitude
             page.mouse.wheel(x, y, delta_x=0, delta_y=delta_y)
->>>>>>> ana
 
         elif fname == "drag_and_drop":
             page.mouse.move(denorm(args["x"], SCREEN_WIDTH), denorm(args["y"], SCREEN_HEIGHT))
@@ -192,11 +186,10 @@ def execute_action(page, fname, args):
 
     except Exception as e:
         print(f"    x Error: {e}")
-        # Narra el error
         if VOICE_ENABLED:
             voice.error_accion(fname, str(e))
 
-    time.sleep(0.2)   # reduced from 0.4
+    time.sleep(0.2)
 
 
 def capture_state(state):
@@ -205,7 +198,7 @@ def capture_state(state):
         page.wait_for_load_state("domcontentloaded", timeout=8000)
     except Exception:
         pass
-    time.sleep(0.4)   # reduced from 0.8
+    time.sleep(0.4)
     return page.screenshot(type="png"), page.url
 
 
@@ -232,10 +225,13 @@ def main():
 
     # ── Saludo inicial con personalidad ──────────────────────────────────────
     if VOICE_ENABLED:
+        workflow_name = workflow.get("workflowName", "flujo de trabajo")
+        mappings_list = field_mappings if isinstance(field_mappings, list) else []
         voice.saludo_inicio(workflow_name, len(mappings_list))
-        time.sleep(2)  # deja que termine de hablar antes de abrir el browser
-        voice.anunciar_mapeos(mappings_list)
-        time.sleep(3)
+        time.sleep(2)
+        if mappings_list:
+            voice.anunciar_mapeos(mappings_list)
+            time.sleep(3)
 
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     config = types.GenerateContentConfig(
@@ -245,7 +241,7 @@ def main():
     )
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=False, slow_mo=100)   # reduced from 250
+        browser = pw.chromium.launch(headless=False, slow_mo=100)
         context = browser.new_context(
             viewport={"width": SCREEN_WIDTH, "height": SCREEN_HEIGHT}
         )
@@ -353,7 +349,7 @@ STEP 5 — Final validation:
 
             # Narra turnos clave
             if VOICE_ENABLED:
-                voice.inicio_turno(turn + 1, MAX_TURNS)
+                voice.inicio_turno(turn_num, MAX_TURNS)
 
             response = client.models.generate_content(
                 model=MODEL,
@@ -372,10 +368,7 @@ STEP 5 — Final validation:
                     print(f"  Gemini: {part.text[:200]}")
             reasoning = " ".join(reasoning_parts)
 
-<<<<<<< HEAD
             # Collect function calls
-=======
->>>>>>> ana
             function_calls = [
                 p.function_call
                 for p in candidate.content.parts
@@ -383,7 +376,6 @@ STEP 5 — Final validation:
             ]
 
             if not function_calls:
-<<<<<<< HEAD
                 final_summary = reasoning or "No further actions."
                 print("\n✓ Agent finished.")
                 # Log final state
@@ -400,19 +392,11 @@ STEP 5 — Final validation:
 
             # Execute actions and log them
             executed_actions = []
-=======
-                print("\nOk Agent finished — no more actions.")
-                turns_completed = turn + 1
-                break
-
-            results = []
->>>>>>> ana
             for fc in function_calls:
                 action_entry = {"name": fc.name, "args": dict(fc.args)}
                 execute_action(fc.name, dict(fc.args), state)
                 executed_actions.append(action_entry)
 
-<<<<<<< HEAD
             new_screenshot, new_url = capture_state(state)
             print(f"  URL after: {new_url}")
 
@@ -426,11 +410,6 @@ STEP 5 — Final validation:
             )
 
             # Build function responses
-=======
-            new_screenshot, new_url = capture_state(page)
-            print(f"  URL: {new_url}")
-
->>>>>>> ana
             response_parts = []
             for fc in function_calls:
                 response_parts.append(
@@ -441,16 +420,15 @@ STEP 5 — Final validation:
                         )
                     )
                 )
-<<<<<<< HEAD
-=======
-
->>>>>>> ana
             response_parts.append(
                 types.Part.from_bytes(data=new_screenshot, mime_type="image/png")
             )
             contents.append(types.Content(role="user", parts=response_parts))
 
-<<<<<<< HEAD
+        # ── Mensaje final ─────────────────────────────────────────────────────
+        if VOICE_ENABLED:
+            voice.agente_termino()
+
         logger.finish(final_summary)
         print("\nAgent execution complete. Close the browser when done.")
 
@@ -458,15 +436,6 @@ STEP 5 — Final validation:
             first_page.wait_for_event("close", timeout=0)
         except Exception:
             pass
-=======
-        # ── Mensaje final ─────────────────────────────────────────────────────
-        if VOICE_ENABLED:
-            voice.agente_termino()
-
-        print("\nAgent execution complete.")
-        time.sleep(5)
-        browser.close()
->>>>>>> ana
 
 
 if __name__ == "__main__":
