@@ -213,11 +213,31 @@ To switch between tabs, use the 'navigate' action with the target URL — the ag
 
 Field mapping reference (from recorded example): {field_mappings}
 
-Important rules:
-- Complete the task fully and autonomously across all tabs.
-- Use the navigate action to switch between tabs when needed.
-- Skip any order/item that already exists in the destination.
-- When done, stop and summarize what you did."""
+--- MANDATORY DEDUPLICATION PROTOCOL ---
+You MUST follow these steps in order. Do not skip any step.
+
+STEP 1 — Scan existing destination records:
+  Navigate to the destination tab ({destination_url}).
+  Scroll through ALL registered/existing records and read every ID (order number, PO, or equivalent).
+  Mentally note the full list of IDs already present.
+
+STEP 2 — Scan origin records:
+  Navigate to the origin tab ({origin_url}).
+  Scroll through ALL records and note every ID available.
+
+STEP 3 — Calculate what is missing:
+  Compare both lists.
+  Only records that exist in the ORIGIN but NOT in the DESTINATION need to be transferred.
+  If all records already exist in the destination, output a summary and stop — do not re-add anything.
+
+STEP 4 — Transfer only the missing records:
+  For each missing record (and only those), fill the destination form and submit.
+  After each submission, verify the new record appears in the destination list before continuing.
+
+STEP 5 — Final validation:
+  After all transfers, go back to the destination and confirm every record from the origin now exists there.
+  Report: how many already existed, how many were added, and list their IDs.
+---"""
 
         initial_screenshot, current_url = capture_state(state)
 
