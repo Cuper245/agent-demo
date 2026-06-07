@@ -98,12 +98,23 @@ function getElementContext(element) {
 function getSystemType() {
   const title = document.title.toLowerCase();
   const heading = document.querySelector("h1")?.innerText?.toLowerCase() || "";
+  const url = window.location.href.toLowerCase();
 
-  if (title.includes("origin") || heading.includes("origin")) {
+  if (
+    url.includes("https://valmart-ecru.vercel.app/") ||
+    title.includes("origin") ||
+    heading.includes("origin") ||
+    heading.includes("retailer")
+  ) {
     return "origin";
   }
 
-  if (title.includes("destination") || heading.includes("destination")) {
+  if (
+    url.includes("https://arco-nine.vercel.app/") ||
+    title.includes("destination") ||
+    heading.includes("destination") ||
+    heading.includes("internal")
+  ) {
     return "destination";
   }
 
@@ -153,11 +164,12 @@ document.addEventListener(
   "input",
   (event) => {
     const target = event.target;
+    const isPassword = target.getAttribute("type") === "password";
 
     sendRecorderEvent({
       eventType: "input",
       element: getElementContext(target),
-      inputValue: target.value
+      inputValue: isPassword ? "[REDACTED_PASSWORD]" : target.value
     });
   },
   true
@@ -193,12 +205,14 @@ document.addEventListener(
 document.addEventListener(
   "paste",
   (event) => {
+    const target = event.target;
+    const isPassword = target.getAttribute("type") === "password";
     const pastedText = event.clipboardData?.getData("text") || "";
 
     sendRecorderEvent({
       eventType: "paste",
-      pastedText,
-      element: getElementContext(event.target)
+      pastedText: isPassword ? "[REDACTED_PASSWORD]" : pastedText,
+      element: getElementContext(target)
     });
   },
   true

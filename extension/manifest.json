@@ -8,9 +8,8 @@
     "http://localhost:3000/*",
     "http://localhost:3001/*",
     "http://localhost:4000/*",
-    "http://127.0.0.1:3000/*",
-    "http://127.0.0.1:3001/*",
-    "http://127.0.0.1:4000/*"
+    "https://valmart-ecru.vercel.app/*",
+    "https://arco-nine.vercel.app/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -24,11 +23,11 @@
       "matches": [
         "http://localhost:3000/*",
         "http://localhost:3001/*",
-        "http://127.0.0.1:3000/*",
-        "http://127.0.0.1:3001/*"
+        "https://valmart-ecru.vercel.app/*",
+        "https://arco-nine.vercel.app/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
   ]
-}   
+}

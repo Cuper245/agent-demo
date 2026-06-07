@@ -1,157 +1,110 @@
 {
   "workflowName": "database_row_transfer",
   "origin": {
-    "url": "http://localhost:3000/",
-    "rowSelector": "#orders-body tr",
+    "url": "https://valmart-ecru.vercel.app/orders",
+    "rowSelector": "tbody tr",
     "cellSelector": "td",
-    "tableHeadersSelector": "#origin-orders-table thead th"
+    "tableHeadersSelector": "thead th"
   },
   "destination": {
-    "url": "http://localhost:3001/",
-    "formSelector": "#destination-form",
-    "submitSelector": "#save-order",
-    "resultRowsSelector": "#registered-body tr"
+    "url": "https://arco-nine.vercel.app/pedidos/nuevo",
+    "formSelector": "div.space-y-6.max-w-3xl",
+    "submitSelector": "button.inline-flex.items-center.justify-center.gap-2.whitespace-nowrap.rounded-md.text-sm.font-medium.transition-colors.focus-visible:outline-none.focus-visible:ring-2.focus-visible:ring-ring.disabled:pointer-events-none.disabled:opacity-50.bg-primary.text-primary-foreground.shadow.hover:bg-primary/90.h-9.px-4.py-2[type=\"submit\"]",
+    "resultRowsSelector": "tbody tr"
   },
   "mappings": [
     {
-      "originLabel": null,
+      "originLabel": "ID PEDIDO",
       "originField": null,
-      "originSelector": null,
-      "destinationLabel": "Internal Order ID",
-      "destinationSelector": "#internal-order-id",
-      "destinationField": "internalOrderId",
-      "observedValue": "PO-1001",
-      "confidence": 0.95
+      "originSelector": "td.px-3.py-3.font-mono.text-xs.text-gray-600.whitespace-nowrap.select-all",
+      "destinationLabel": "ID Pedido",
+      "destinationField": null,
+      "destinationSelector": "#orderId",
+      "observedValue": "ORD-1780815578669",
+      "reason": "Origin table header 'ID PEDIDO' maps to destination input with label 'ID Pedido' and ID 'orderId'.",
+      "confidence": 1
     },
     {
-      "originLabel": null,
+      "originLabel": "FECHA",
       "originField": null,
-      "originSelector": null,
-      "destinationLabel": "Client Chain",
-      "destinationSelector": "#client-chain",
-      "destinationField": "clientChain",
-      "observedValue": "Walmart",
-      "confidence": 0.95
+      "originSelector": "td.px-3.py-3.whitespace-nowrap.text-gray-600.text-xs",
+      "destinationLabel": "Fecha y Hora",
+      "destinationField": null,
+      "destinationSelector": "#fecha",
+      "observedValue": "07/06/26 12:59 a.m.",
+      "reason": "Origin table header 'FECHA' semantically maps to destination input with label 'Fecha y Hora' and ID 'fecha'.",
+      "confidence": 1
     },
     {
-      "originLabel": null,
+      "originLabel": "CLIENTE",
       "originField": null,
-      "originSelector": null,
-      "destinationLabel": "Branch Code",
-      "destinationSelector": "#branch-code",
-      "destinationField": "branchCode",
-      "observedValue": "MTY-001",
-      "confidence": 0.95
+      "originSelector": "td.px-3.py-3.whitespace-nowrap.text-gray-700",
+      "destinationLabel": "Cliente",
+      "destinationField": null,
+      "destinationSelector": "#cliente",
+      "observedValue": "Valentina Gonzalez",
+      "reason": "Origin table header 'CLIENTE' maps to destination input with label 'Cliente' and ID 'cliente'.",
+      "confidence": 1
     },
     {
-      "originLabel": null,
+      "originLabel": "DIRECCIÓN",
       "originField": null,
-      "originSelector": null,
-      "destinationLabel": "Material Code",
-      "destinationSelector": "#material-code",
-      "destinationField": "materialCode",
-      "observedValue": "COKE-600",
-      "confidence": 0.95
-    },
-    {
-      "originLabel": null,
-      "originField": null,
-      "originSelector": null,
-      "destinationLabel": "Case Quantity",
-      "destinationSelector": "#case-quantity",
-      "destinationField": "caseQuantity",
-      "observedValue": "120",
-      "confidence": 0.95
-    },
-    {
-      "originLabel": null,
-      "originField": null,
-      "originSelector": null,
-      "destinationLabel": "Requested Delivery Date",
-      "destinationSelector": "#requested-delivery-date",
-      "destinationField": "requestedDeliveryDate",
-      "observedValue": "2026-06-10",
-      "confidence": 0.95
-    },
-    {
-      "originLabel": null,
-      "originField": null,
-      "originSelector": null,
-      "destinationLabel": "Logistics Notes",
-      "destinationSelector": "#logistics-notes",
-      "destinationField": "logisticsNotes",
-      "observedValue": "Deliver through dock 3",
-      "confidence": 0.95
-    },
-    {
-      "originLabel": "Store ID",
-      "originField": "storeId",
-      "originSelector": "[data-field=\"storeId\"]",
-      "destinationLabel": "Branch Code",
-      "destinationSelector": "#branch-code",
-      "destinationField": "branchCode",
-      "observedValue": "MTY-001",
-      "confidence": 0.95
-    },
-    {
-      "originLabel": "Units",
-      "originField": "units",
-      "originSelector": "[data-field=\"units\"]",
-      "destinationLabel": "Case Quantity",
-      "destinationSelector": "#case-quantity",
-      "destinationField": "caseQuantity",
-      "observedValue": "120",
-      "confidence": 0.95
-    },
-    {
-      "originLabel": "Notes",
-      "originField": "notes",
-      "originSelector": "[data-field=\"notes\"]",
-      "destinationLabel": "Logistics Notes",
-      "destinationSelector": "#logistics-notes",
-      "destinationField": "logisticsNotes",
-      "observedValue": "Deliver through dock 3",
-      "confidence": 0.95
-    },
-    {
-      "originLabel": "Customer",
-      "originField": "customer",
-      "originSelector": "[data-field=\"customer\"]",
-      "destinationLabel": "Client Chain",
-      "destinationSelector": "#client-chain",
-      "destinationField": "clientChain",
-      "observedValue": "Walmart",
-      "confidence": 0.95
+      "originSelector": "span.line-clamp-1",
+      "destinationLabel": "Dirección",
+      "destinationField": null,
+      "destinationSelector": "#direccion",
+      "observedValue": "123 Lover Road",
+      "reason": "Origin table header 'DIRECCIÓN' maps to destination input with label 'Dirección' and ID 'direccion'.",
+      "confidence": 1
     },
     {
       "originLabel": "SKU",
-      "originField": "sku",
-      "originSelector": "[data-field=\"sku\"]",
-      "destinationLabel": "Material Code",
-      "destinationSelector": "#material-code",
-      "destinationField": "materialCode",
-      "observedValue": "COKE-600",
-      "confidence": 0.95
+      "originField": null,
+      "originSelector": "td.px-2.py-2.font-mono.text-gray-500.whitespace-nowrap.select-all",
+      "destinationLabel": "SKU",
+      "destinationField": null,
+      "destinationSelector": "input[placeholder*=\"8480000\"]",
+      "observedValue": "4008713713411",
+      "reason": "Origin product 'SKU' maps to destination product input with nearby text 'SKU' and placeholder containing SKU-like numbers. This is a repeatable field.",
+      "confidence": 0.9
+    },
+    {
+      "originLabel": "NOMBRE",
+      "originField": null,
+      "originSelector": "td.px-2.py-2.font-medium.text-gray-900.min-w-[140px]",
+      "destinationLabel": "Nombre",
+      "destinationField": null,
+      "destinationSelector": "input[placeholder*=\"Nombre del producto\"]",
+      "observedValue": "Copos de Avena extra suaves",
+      "reason": "Origin product 'NOMBRE' maps to destination product input with nearby text 'Nombre' and placeholder 'Nombre del producto'. This is a repeatable field.",
+      "confidence": 0.9
+    },
+    {
+      "originLabel": "PRECIO/U",
+      "originField": null,
+      "originSelector": "td.px-2.py-2.whitespace-nowrap.font-medium.text-gray-900",
+      "destinationLabel": "Precio",
+      "destinationField": null,
+      "destinationSelector": "input[type=\"number\"][placeholder=\"0.00\"]",
+      "observedValue": "$73.18",
+      "reason": "Origin product 'PRECIO/U' maps to destination product input with nearby text 'Precio' and numerical placeholder. This is a repeatable field.",
+      "confidence": 0.9
+    },
+    {
+      "originLabel": "UNIDADES",
+      "originField": null,
+      "originSelector": "td.px-2.py-2.text-center.font-medium.text-gray-900",
+      "destinationLabel": "Unidades",
+      "destinationField": null,
+      "destinationSelector": "input[type=\"number\"][placeholder=\"1\"]",
+      "observedValue": "2",
+      "reason": "Origin product 'UNIDADES' maps to destination product input with nearby text 'Unidades' and numerical placeholder. This is a repeatable field.",
+      "confidence": 0.9
     }
   ],
+  "learnedBy": "gemini",
   "learnedFromObservation": true,
-  "observedCopiedValues": [
-    "PO-1001",
-    "Walmart",
-    "MTY-001",
-    "COKE-600",
-    "120",
-    "2026-06-10",
-    "Deliver through dock 3",
-    "PO-1001",
-    "Walmart",
-    "MTY-001",
-    "COKE-600",
-    "120",
-    "2026-06-10",
-    "Deliver through dock 3"
-  ],
-  "explanation": "The recorder observed which origin cell values were copied or clicked and which destination form inputs received the same values. It inferred column-to-field mappings from matching values, labels, and selectors.",
-  "confidence": 0.95,
-  "createdAt": "2026-06-07T04:07:44.166Z"
+  "explanation": "Gemini inferred the field mappings from the recorded browser trace.",
+  "confidence": 0.9500000000000002,
+  "createdAt": "2026-06-07T07:33:06.765Z"
 }

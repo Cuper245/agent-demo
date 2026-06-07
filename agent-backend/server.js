@@ -4,6 +4,9 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 
+require("dotenv").config();
+const { learnWorkflowWithGemini } = require("./llm-learner");
+
 const app = express();
 const PORT = 4000;
 
@@ -66,14 +69,97 @@ app.post("/reset", (req, res) => {
   });
 });
 
-app.post("/learn", (req, res) => {
+app.post("/learn", async (req, res) => {
   const events = readJson(EVENTS_FILE, []);
 
   const originEvents = events.filter((event) => event.system === "origin");
   const destinationEvents = events.filter((event) => event.system === "destination");
 
-  const originUrl = originEvents[0]?.url || "http://localhost:3000";
-  const destinationUrl = destinationEvents[0]?.url || "http://localhost:3001";
+  if (originEvents.length === 0 || destinationEvents.length === 0) {
+    return res.status(400).json({
+        ok: false,
+        error: "Cannot learn workflow: no origin or destination events recorded.",
+        debug: {
+        totalEvents: events.length,
+        originEvents: originEvents.length,
+        destinationEvents: destinationEvents.length
+        }
+    });
+    }
+
+  function pickOriginUrl(events, fallback) {
+    const urls = events.map((event) => event.url).filter(Boolean);
+    return (
+        urls.find((url) => url.includes("/orders")) ||
+        urls[urls.length - 1] ||
+        fallback
+    );
+    }
+
+    function pickDestinationUrl(events, fallback) {
+        const urls = events.map((event) => event.url).filter(Boolean);
+        return (
+            urls.find((url) => url.includes("/pedidos/nuevo")) ||
+            urls[urls.length - 1] ||
+            fallback
+        );
+        }
+
+    const originUrl = pickOriginUrl(originEvents, "http://localhost:3000");
+    const destinationUrl = pickDestinationUrl(destinationEvents, "http://localhost:3001");
+
+    log(`Origin events: ${originEvents.length}`);
+    log(`Destination events: ${destinationEvents.length}`);
+
+    try {
+        log("Trying Gemini workflow learner...");
+
+        const llmWorkflow = await learnWorkflowWithGemini({
+            originEvents,
+            destinationEvents
+        });
+
+        const workflow = {
+            workflowName: "database_row_transfer",
+            origin: {
+            url: originUrl,
+            rowSelector: llmWorkflow.origin?.rowSelector || "tbody tr",
+            cellSelector: llmWorkflow.origin?.cellSelector || "td",
+            tableHeadersSelector: llmWorkflow.origin?.tableHeadersSelector || "thead th"
+            },
+            destination: {
+            url: destinationUrl,
+            formSelector: llmWorkflow.destination?.formSelector || "form",
+            submitSelector: llmWorkflow.destination?.submitSelector || 'button[type="submit"]',
+            resultRowsSelector: llmWorkflow.destination?.resultRowsSelector || "tbody tr"
+            },
+            mappings: llmWorkflow.mappings,
+            learnedBy: "gemini",
+            learnedFromObservation: true,
+            explanation:
+            "Gemini inferred the field mappings from the recorded browser trace.",
+            confidence:
+            llmWorkflow.mappings.reduce(
+                (sum, mapping) => sum + Number(mapping.confidence || 0),
+                0
+            ) / llmWorkflow.mappings.length,
+            createdAt: new Date().toISOString()
+        };
+
+        writeJson(WORKFLOW_FILE, workflow);
+
+        log("Gemini workflow learned and saved.");
+
+        return res.json({
+            ok: true,
+            workflow
+        });
+    } catch (error) {
+        console.error("Gemini learner failed. Falling back to heuristic learner.");
+        console.error(error);
+    }
+
+
 
   const originCopies = originEvents
     .filter((event) => event.eventType === "copy" && event.selectedText)
@@ -193,25 +279,24 @@ app.post("/learn", (req, res) => {
   const workflow = {
     workflowName: "database_row_transfer",
     origin: {
-      url: originUrl,
-      rowSelector: "#orders-body tr",
-      cellSelector: "td",
-      tableHeadersSelector: "#origin-orders-table thead th"
+        url: originUrl,
+        rowSelector: llmWorkflow.origin?.rowSelector || "tbody tr",
+        cellSelector: llmWorkflow.origin?.cellSelector || "td",
+        tableHeadersSelector: llmWorkflow.origin?.tableHeadersSelector || "thead th"
     },
     destination: {
-      url: destinationUrl,
-      formSelector: "#destination-form",
-      submitSelector: "#save-order",
-      resultRowsSelector: "#registered-body tr"
+        url: destinationUrl,
+        formSelector: llmWorkflow.destination?.formSelector || "form",
+        submitSelector: llmWorkflow.destination?.submitSelector || 'button[type="submit"]',
+        resultRowsSelector: llmWorkflow.destination?.resultRowsSelector || "tbody tr"
     },
-    mappings: uniqueMappings,
+    mappings: llmWorkflow.mappings,
+    learnedBy: "gemini",
     learnedFromObservation: true,
-    observedCopiedValues: copiedValues,
-    explanation:
-      "The recorder observed which origin cell values were copied or clicked and which destination form inputs received the same values. It inferred column-to-field mappings from matching values, labels, and selectors.",
-    confidence: uniqueMappings.length > 0 ? 0.95 : 0.45,
+    explanation: "Gemini inferred the field mappings from the recorded browser trace.",
+    confidence: llmWorkflow.mappings.reduce((sum, m) => sum + Number(m.confidence || 0), 0) / llmWorkflow.mappings.length,
     createdAt: new Date().toISOString()
-  };
+    };
 
   writeJson(WORKFLOW_FILE, workflow);
 
